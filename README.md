@@ -24,3 +24,30 @@ zzz run
 ```bash
 zzz new
 ```
+
+- .zzz.yaml
+
+```
+title: zzz
+dirfilter:
+- tmp
+- .git
+- public
+- scripts
+- vendor
+- logs
+- templates
+ext:
+- go
+action:
+  before:
+  - find . -name ".DS_Store" -print -delete
+  after:
+  - echo "zzz end"
+
+```
+
+- dirfilter:不监控目录
+- ext:监控文件后缀
+- action.before:执行前处理
+- action.after:执行后处理
