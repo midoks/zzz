@@ -6,7 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
-	// "runtime"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -32,22 +32,56 @@ var Run = cli.Command{
 var (
 	runMutex sync.Mutex
 	conf     *ZZZ
+	cmd      *exec.Cmd
 	exit     chan bool
 )
 
 func init() {
 	exit = make(chan bool)
-
 	rootPath, _ := os.Getwd()
-
 	file := rootPath + "/" + Zfile
-
 	conf = new(ZZZ)
 	if tools.IsExist(file) {
 		content, _ := tools.ReadFile(file)
 		yaml.Unmarshal([]byte(content), conf)
 	} else {
 		conf.DirFilter = []string{".git", ".github", "vendor", ".DS_Store", "tmp"}
+		conf.Ext = []string{"go"}
+	}
+}
+
+// Kill kills the running command process
+func Kill() {
+	defer func() {
+		if e := recover(); e != nil {
+			logger.Log.Infof("Kill recover: %s", e)
+		}
+	}()
+	if cmd != nil && cmd.Process != nil {
+		// Windows does not support Interrupt
+		if runtime.GOOS == "windows" {
+			cmd.Process.Signal(os.Kill)
+		} else {
+			cmd.Process.Signal(os.Interrupt)
+		}
+
+		ch := make(chan struct{}, 1)
+		go func() {
+			cmd.Wait()
+			ch <- struct{}{}
+		}()
+
+		select {
+		case <-ch:
+			return
+		case <-time.After(10 * time.Second):
+			logger.Log.Info("Timeout. Force kill cmd process")
+			err := cmd.Process.Kill()
+			if err != nil {
+				logger.Log.Errorf("Error while killing cmd process: %s", err)
+			}
+			return
+		}
 	}
 }
 
@@ -62,56 +96,46 @@ func isFilterFile(name string) bool {
 
 func CmdRunBefore() {
 	rootPath, _ := os.Getwd()
-	file := rootPath + "/" + Zfile
-	conf := new(ZZZ)
-	if tools.IsExist(file) {
-		logger.Log.Infof("App Run Before Hook Start")
 
-		content, _ := tools.ReadFile(file)
-		yaml.Unmarshal([]byte(content), conf)
+	logger.Log.Infof("App Run Before Hook Start")
 
-		for _, sh := range conf.Action.Before {
+	for _, sh := range conf.Action.Before {
 
-			tmpFile := rootPath + "/." + tools.Md5(sh) + ".sh"
-			tools.WriteFile(tmpFile, sh)
-			cmd := exec.Command("sh", []string{"-c", tmpFile}...)
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
+		tmpFile := rootPath + "/." + tools.Md5(sh) + ".sh"
+		tools.WriteFile(tmpFile, sh)
+		cmd = exec.Command("sh", []string{"-c", tmpFile}...)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
 
-			err := cmd.Run()
-			if err != nil {
-				logger.Log.Errorf("Run Before Hook Error: %s", err)
-			}
-			os.Remove(tmpFile)
+		err := cmd.Run()
+		if err != nil {
+			logger.Log.Errorf("Run Before Hook Error: %s", err)
 		}
-		logger.Log.Infof("App Run Before Hook End")
+		os.Remove(tmpFile)
 	}
+	logger.Log.Infof("App Run Before Hook End")
+
 }
 
 func CmdRunAfter() {
 	rootPath, _ := os.Getwd()
-	file := rootPath + "/" + Zfile
-	conf := new(ZZZ)
-	if tools.IsExist(file) {
-		content, _ := tools.ReadFile(file)
-		yaml.Unmarshal([]byte(content), conf)
-		logger.Log.Infof("App Run After Hook Start")
-		for _, sh := range conf.Action.After {
 
-			tmpFile := rootPath + "/." + tools.Md5(sh) + ".sh"
-			tools.WriteFile(tmpFile, sh)
-			cmd := exec.Command("sh", []string{"-c", tmpFile}...)
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
+	logger.Log.Infof("App Run After Hook Start")
+	for _, sh := range conf.Action.After {
 
-			err := cmd.Run()
-			if err != nil {
-				logger.Log.Errorf("Run After Hook Error:", err)
-			}
-			os.Remove(tmpFile)
+		tmpFile := rootPath + "/." + tools.Md5(sh) + ".sh"
+		tools.WriteFile(tmpFile, sh)
+		cmd = exec.Command("sh", []string{"-c", tmpFile}...)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		err := cmd.Run()
+		if err != nil {
+			logger.Log.Errorf("Run After Hook Error:", err)
 		}
-		logger.Log.Infof("App Run After Hook End")
+		os.Remove(tmpFile)
 	}
+	logger.Log.Infof("App Run After Hook End")
 }
 
 func CmdAutoBuild(rootPath string) {
@@ -121,7 +145,7 @@ func CmdAutoBuild(rootPath string) {
 	//build
 	args := []string{"build"}
 	args = append(args, "-o", appName)
-	cmd := exec.Command("go", args...)
+	cmd = exec.Command("go", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
@@ -134,6 +158,7 @@ func CmdAutoBuild(rootPath string) {
 }
 
 func CmdRestart(rootPath string) {
+	Kill()
 	os.Chdir(rootPath)
 	appName := path.Base(rootPath)
 
@@ -142,7 +167,7 @@ func CmdRestart(rootPath string) {
 		appName = "./" + appName
 	}
 
-	cmd := exec.Command(appName)
+	cmd = exec.Command(appName)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
@@ -222,6 +247,7 @@ func initWatcher(rootPath string) {
 }
 
 func CmdRun(c *cli.Context) error {
+	ShowShortVersionBanner()
 
 	rootPath, _ := os.Getwd()
 	appName := path.Base(rootPath)
@@ -229,10 +255,5 @@ func CmdRun(c *cli.Context) error {
 
 	CmdDone(rootPath)
 	initWatcher(rootPath)
-
-	for {
-		// <-exit
-		// runtime.Goexit()
-	}
 	return nil
 }

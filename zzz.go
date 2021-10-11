@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/midoks/zzz/internal/cmd"
+	"github.com/midoks/zzz/internal/conf"
 	"github.com/urfave/cli"
 )
 
@@ -12,6 +13,11 @@ const (
 	Version = "0.0.1"
 	AppName = "zzz"
 )
+
+func init() {
+	conf.App.Version = Version
+	conf.App.Name = AppName
+}
 
 func main() {
 
@@ -22,9 +28,12 @@ func main() {
 	app.Commands = []cli.Command{
 		cmd.Run,
 		cmd.New,
+		cmd.Version,
 	}
 
 	if err := app.Run(os.Args); err != nil {
 		log.Fatalf("Failed to start application: %v", err)
 	}
+
+	// cmd.CmdRun(nil)
 }

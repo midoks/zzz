@@ -28,6 +28,7 @@ type ZZZ struct {
 		Before []string `yaml:"before"`
 		After  []string `yaml:"after"`
 	}
+	Link string
 }
 
 const Zfile = ".zzz.yaml"
@@ -54,6 +55,7 @@ func CmdNew(c *cli.Context) error {
 
 		conf.Action.Before = append(conf.Action.Before, "echo \"zzz start\"")
 		conf.Action.After = append(conf.Action.After, "echo \"zzz end\"")
+		conf.Link = "https://github.com/midoks/zzz"
 
 		d, err := yaml.Marshal(&conf)
 		if err != nil {
