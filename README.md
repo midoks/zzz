@@ -10,7 +10,7 @@ Go实时开发小工具
 ### 安装
 
 ```bash
-go get github.com/midoks/zzz
+go install github.com/midoks/zzz@latest
 ```
 
 ### 直接运行
