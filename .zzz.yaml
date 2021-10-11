@@ -1,0 +1,8 @@
+title: zzz
+ext:
+- go
+action:
+  before:
+  - echo "zzz demo start"
+  after:
+  - echo "zzz demo end"

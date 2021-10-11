@@ -21,11 +21,10 @@ func main() {
 	app.Usage = "A simple go realtime develop tool"
 	app.Commands = []cli.Command{
 		cmd.Run,
+		cmd.New,
 	}
 
 	if err := app.Run(os.Args); err != nil {
 		log.Fatalf("Failed to start application: %v", err)
 	}
-
-	cmd.CmdRun(nil)
 }
