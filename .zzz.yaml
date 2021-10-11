@@ -1,8 +1,16 @@
 title: zzz
+dirfilter:
+- tmp
+- .git
+- public
+- scripts
+- vendor
+- logs
+- templates
 ext:
 - go
 action:
   before:
-  - echo "zzz demo start"
+  - find . -name ".DS_Store" -print -delete
   after:
-  - echo "zzz demo end"
+  - echo "zzz end"

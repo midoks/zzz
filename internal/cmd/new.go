@@ -21,9 +21,10 @@ var New = cli.Command{
 // Note: struct fields must be public in order for unmarshal to
 // correctly populate the data.
 type ZZZ struct {
-	Title  string
-	Ext    []string
-	Action struct {
+	Title     string
+	DirFilter []string
+	Ext       []string
+	Action    struct {
 		Before []string `yaml:"before"`
 		After  []string `yaml:"after"`
 	}
@@ -42,8 +43,17 @@ func CmdNew(c *cli.Context) error {
 		conf := ZZZ{}
 		conf.Title = "zzz"
 		conf.Ext = append(conf.Ext, "go")
+
+		conf.DirFilter = append(conf.DirFilter, "tmp")
+		conf.DirFilter = append(conf.DirFilter, ".git")
+		conf.DirFilter = append(conf.DirFilter, "public")
+		conf.DirFilter = append(conf.DirFilter, "scripts")
+		conf.DirFilter = append(conf.DirFilter, "vendor")
+		conf.DirFilter = append(conf.DirFilter, "logs")
+		conf.DirFilter = append(conf.DirFilter, "templates")
+
 		conf.Action.Before = append(conf.Action.Before, "echo \"zzz start\"")
-		conf.Action.After = append(conf.Action.Before, "echo \"zzz end\"")
+		conf.Action.After = append(conf.Action.After, "echo \"zzz end\"")
 
 		d, err := yaml.Marshal(&conf)
 		if err != nil {

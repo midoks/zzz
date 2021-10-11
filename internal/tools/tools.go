@@ -17,7 +17,7 @@ func InArray(in string, arr []string) bool {
 	return false
 }
 
-func GetPathDir(path string) []string {
+func GetPathDir(path string, contain []string) []string {
 	var dirs []string
 	files, err := ioutil.ReadDir(path)
 	if err != nil {
@@ -27,12 +27,12 @@ func GetPathDir(path string) []string {
 	for _, file := range files {
 		if file.IsDir() {
 			name := file.Name()
-			if InArray(name, []string{".git", ".github", "vendor", ".DS_Store"}) {
+			if InArray(name, contain) {
 				continue
 			}
 
 			npath := path + "/" + name
-			ndirs := GetPathDir(npath)
+			ndirs := GetPathDir(npath, contain)
 			dirs = append(dirs, npath)
 
 			for _, f := range ndirs {

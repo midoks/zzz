@@ -8,7 +8,7 @@ import (
 	"path"
 	"strings"
 	"sync"
-	"time"
+	// "time"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/midoks/zzz/internal/logger"
@@ -96,17 +96,16 @@ func CmdRunAfter() {
 }
 
 func CmdDone() {
-	fmt.Println("CmdDosnes:", runMutex)
 
-	runMutex.Lock()
-	time.Sleep(5 * time.Second)
+	// runMutex.Lock()
+	// time.Sleep(5 * time.Second)
 
 	rootPath, _ := os.Getwd()
+	appName := path.Base(rootPath)
+
 	CmdRunBefore()
 
 	os.Chdir(rootPath)
-
-	appName := "zzz"
 
 	//build
 	args := []string{"build"}
@@ -135,13 +134,23 @@ func CmdDone() {
 
 	CmdRunAfter()
 
-	//解锁
-	runMutex.Unlock()
+	//unlock
+	// runMutex.Unlock()
 }
 
 func CmdRun(c *cli.Context) error {
 
 	rootPath, _ := os.Getwd()
+
+	file := rootPath + "/" + Zfile
+	conf := new(ZZZ)
+	if tools.IsExist(file) {
+		content, _ := tools.ReadFile(file)
+		yaml.Unmarshal([]byte(content), conf)
+	} else {
+		conf.DirFilter = []string{".git", ".github", "vendor", ".DS_Store", "tmp"}
+	}
+
 	appName := path.Base(rootPath)
 	logger.Log.Infof("Using '%s' as 'appname'", appName)
 
@@ -164,7 +173,7 @@ func CmdRun(c *cli.Context) error {
 
 				//过滤不需要监控的文件
 				if !isFilterFile(ev.Name) {
-					// log.Println("event name:", ev)
+					log.Println("event name:", ev)
 					if ev.Op&fsnotify.Create == fsnotify.Create {
 						// log.Println("创建文件:", ev.Name)
 						CmdDone()
@@ -190,20 +199,23 @@ func CmdRun(c *cli.Context) error {
 				if !ok {
 					return
 				}
-				log.Println("error:", err)
+				log.Println("watcher.Errors:", err)
 			}
 		}
 	}()
 
 	logger.Log.Info("Initializing watcher...")
-	dirs := tools.GetPathDir(rootPath)
+
+	dirs := tools.GetPathDir(rootPath, conf.DirFilter)
 	for _, d := range dirs {
 		err = watcher.Add(d)
+		logger.Log.Hintf(colors.Bold("Watching: ")+"%s", d)
 		if err != nil {
-			logger.Log.Hintf(colors.Bold("Watching: ")+"%s", d)
-			// logger.Log.Errorf("Watcher Add Error:%v:%s", err, d)
+			logger.Log.Fatalf("Failed to watch directory: %s", err)
 		}
 	}
+
+	CmdDone()
 	<-done
 	return nil
 }
