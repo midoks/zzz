@@ -6,6 +6,9 @@ import (
 	"io/ioutil"
 	"os"
 	"strings"
+	"time"
+
+	"github.com/midoks/zzz/internal/logger"
 )
 
 func InArray(in string, arr []string) bool {
@@ -15,6 +18,25 @@ func InArray(in string, arr []string) bool {
 		}
 	}
 	return false
+}
+
+// GetFileModTime returns unix timestamp of `os.File.ModTime` for the given path.
+func GetFileModTime(path string) int64 {
+	path = strings.Replace(path, "\\", "/", -1)
+	f, err := os.Open(path)
+	if err != nil {
+		logger.Log.Errorf("Failed to open file on '%s': %s", path, err)
+		return time.Now().Unix()
+	}
+	defer f.Close()
+
+	fi, err := f.Stat()
+	if err != nil {
+		logger.Log.Errorf("Failed to get file stats: %s", err)
+		return time.Now().Unix()
+	}
+
+	return fi.ModTime().Unix()
 }
 
 func GetPathDir(path string, contain []string) []string {

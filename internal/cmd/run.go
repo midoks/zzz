@@ -6,9 +6,10 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	// "runtime"
 	"strings"
 	"sync"
-	// "time"
+	"time"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/midoks/zzz/internal/logger"
@@ -30,7 +31,25 @@ var Run = cli.Command{
 
 var (
 	runMutex sync.Mutex
+	conf     *ZZZ
+	exit     chan bool
 )
+
+func init() {
+	exit = make(chan bool)
+
+	rootPath, _ := os.Getwd()
+
+	file := rootPath + "/" + Zfile
+
+	conf = new(ZZZ)
+	if tools.IsExist(file) {
+		content, _ := tools.ReadFile(file)
+		yaml.Unmarshal([]byte(content), conf)
+	} else {
+		conf.DirFilter = []string{".git", ".github", "vendor", ".DS_Store", "tmp"}
+	}
+}
 
 func isFilterFile(name string) bool {
 	suffix := path.Ext(name)
@@ -95,17 +114,9 @@ func CmdRunAfter() {
 	}
 }
 
-func CmdDone() {
-
-	// runMutex.Lock()
-	// time.Sleep(5 * time.Second)
-
-	rootPath, _ := os.Getwd()
-	appName := path.Base(rootPath)
-
-	CmdRunBefore()
-
+func CmdAutoBuild(rootPath string) {
 	os.Chdir(rootPath)
+	appName := path.Base(rootPath)
 
 	//build
 	args := []string{"build"}
@@ -119,41 +130,43 @@ func CmdDone() {
 		fmt.Println("CmdDo[sddssd]:", err)
 	}
 
+	logger.Log.Success("Built Successfully!")
+}
+
+func CmdRestart(rootPath string) {
+	os.Chdir(rootPath)
+	appName := path.Base(rootPath)
+
 	//start
 	if !strings.Contains(appName, "./") {
 		appName = "./" + appName
 	}
 
-	cmd = exec.Command(appName)
+	cmd := exec.Command(appName)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
 	go cmd.Run()
-	info := fmt.Sprintf("%s is running.s...", appName)
-	fmt.Println(info)
 
-	CmdRunAfter()
-
-	//unlock
-	// runMutex.Unlock()
+	logger.Log.Successf("'%s' is running...", appName)
 }
 
-func CmdRun(c *cli.Context) error {
+func CmdDone(rootPath string) {
 
-	rootPath, _ := os.Getwd()
+	runMutex.Lock()
+	defer runMutex.Unlock()
 
-	file := rootPath + "/" + Zfile
-	conf := new(ZZZ)
-	if tools.IsExist(file) {
-		content, _ := tools.ReadFile(file)
-		yaml.Unmarshal([]byte(content), conf)
-	} else {
-		conf.DirFilter = []string{".git", ".github", "vendor", ".DS_Store", "tmp"}
-	}
+	CmdRunBefore()
+	time.Sleep(1 * time.Second)
 
-	appName := path.Base(rootPath)
-	logger.Log.Infof("Using '%s' as 'appname'", appName)
+	CmdAutoBuild(rootPath)
+	CmdRestart(rootPath)
 
+	time.Sleep(1 * time.Second)
+	CmdRunAfter()
+}
+
+func initWatcher(rootPath string) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		log.Fatal(err)
@@ -171,29 +184,19 @@ func CmdRun(c *cli.Context) error {
 					return
 				}
 
+				isBuild := true
+
 				//过滤不需要监控的文件
-				if !isFilterFile(ev.Name) {
+				if !isFilterFile(ev.Name) && isBuild {
+
 					log.Println("event name:", ev)
-					if ev.Op&fsnotify.Create == fsnotify.Create {
-						// log.Println("创建文件:", ev.Name)
-						CmdDone()
-					}
-					if ev.Op&fsnotify.Write == fsnotify.Write {
-						// log.Println("写入文件:", ev.Name)
-						CmdDone()
-					}
-					if ev.Op&fsnotify.Remove == fsnotify.Remove {
-						// log.Println("删除文件:", ev.Name)
-						go CmdDone()
-					}
-					if ev.Op&fsnotify.Rename == fsnotify.Rename {
-						// log.Println("重命名文件:", ev.Name)
-						go CmdDone()
-					}
-					if ev.Op&fsnotify.Chmod == fsnotify.Chmod {
-						// log.Println("修改权限 : ", ev.Name)
-						go CmdDone()
-					}
+					scheduleTime := time.Now().Add(1 * time.Second)
+					fmt.Println("dddd:", time.Now())
+					time.Sleep(time.Until(scheduleTime))
+
+					fmt.Println("dddd:", time.Now())
+					rootPath, _ := os.Getwd()
+					go CmdDone(rootPath)
 				}
 			case err, ok := <-watcher.Errors:
 				if !ok {
@@ -214,8 +217,22 @@ func CmdRun(c *cli.Context) error {
 			logger.Log.Fatalf("Failed to watch directory: %s", err)
 		}
 	}
-
-	CmdDone()
+	// //
 	<-done
+}
+
+func CmdRun(c *cli.Context) error {
+
+	rootPath, _ := os.Getwd()
+	appName := path.Base(rootPath)
+	logger.Log.Infof("Using '%s' as 'appname'", appName)
+
+	CmdDone(rootPath)
+	initWatcher(rootPath)
+
+	for {
+		// <-exit
+		// runtime.Goexit()
+	}
 	return nil
 }
