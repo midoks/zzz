@@ -88,10 +88,11 @@ func Kill() {
 
 func isFilterFile(name string) bool {
 	suffix := path.Ext(name)
-	if suffix == ".go" {
+	suffix = strings.Trim(suffix, ".")
+
+	if tools.InArray(suffix, conf.Ext) {
 		return false
 	}
-
 	return true
 }
 
@@ -235,6 +236,8 @@ func initWatcher(rootPath string) {
 				logger.Log.Warnf("Watcher error: %s", err.Error()) // No need to exit here
 			}
 		}
+
+		fmt.Println("end")
 	}()
 
 	logger.Log.Info("Initializing watcher...")
