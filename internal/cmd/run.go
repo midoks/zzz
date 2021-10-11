@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	// "log"
+	// "bytes"
 	"os"
 	"os/exec"
 	"path"
@@ -98,7 +99,7 @@ func isFilterFile(name string) bool {
 
 func CmdRunBefore(rootPath string) {
 
-	logger.Log.Infof("App Run Before Hook Start")
+	logger.Log.Infof("App run before hook start")
 
 	for _, sh := range conf.Action.Before {
 
@@ -110,11 +111,11 @@ func CmdRunBefore(rootPath string) {
 
 		err := cmd.Run()
 		if err != nil {
-			logger.Log.Errorf("Run Before Hook Error: %s", err)
+			logger.Log.Errorf("Run before hook error: %s", err)
 		}
 		os.Remove(tmpFile)
 	}
-	logger.Log.Infof("App Run Before Hook End")
+	logger.Log.Infof("App run before hook end")
 
 }
 
@@ -130,7 +131,7 @@ func CmdRunAfter(rootPath string) {
 
 		err := cmd.Run()
 		if err != nil {
-			logger.Log.Errorf("Run After Hook Error:%v", err)
+			logger.Log.Errorf("Run after hook error:%v", err)
 		}
 		os.Remove(tmpFile)
 	}
@@ -141,16 +142,23 @@ func CmdAutoBuild(rootPath string) {
 	os.Chdir(rootPath)
 	appName := path.Base(rootPath)
 
+	cmdName := "go"
+
+	var (
+		err error
+		// stderr bytes.Buffer
+	)
 	//build
 	args := []string{"build"}
 	args = append(args, "-o", appName)
-	cmd = exec.Command("go", args...)
+
+	cmd := exec.Command(cmdName, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	err := cmd.Run()
+	err = cmd.Run()
 	if err != nil {
-		fmt.Println("CmdDo[sddssd]:", err)
+		logger.Log.Errorf("Failed to build the application: %s", err.Error())
 	}
 
 	logger.Log.Success("Built Successfully!")
@@ -159,7 +167,7 @@ func CmdAutoBuild(rootPath string) {
 
 func CmdRestart(rootPath string) {
 	Kill()
-	CmdStart(rootPath)
+	go CmdStart(rootPath)
 }
 
 func CmdStart(rootPath string) {
@@ -181,7 +189,7 @@ func CmdStart(rootPath string) {
 
 	logger.Log.Successf("'%s' is running...", appName)
 
-	// started <- true
+	started <- true
 }
 
 func CmdDone(rootPath string) {
@@ -204,9 +212,8 @@ func initWatcher(rootPath string) {
 	if err != nil {
 		logger.Log.Fatalf("Failed to create watcher: %s", err)
 	}
-	defer watcher.Close()
-
-	done := make(chan bool)
+	// defer watcher.Close()
+	// done := make(chan bool)
 	go func() {
 		for {
 			select {
@@ -249,7 +256,7 @@ func initWatcher(rootPath string) {
 			logger.Log.Fatalf("Failed to watch directory: %s", err)
 		}
 	}
-	<-done
+	// <-done
 }
 
 func CmdRun(c *cli.Context) error {
@@ -259,8 +266,12 @@ func CmdRun(c *cli.Context) error {
 	appName := path.Base(rootPath)
 	logger.Log.Infof("Using '%s' as 'appname'", appName)
 
-	CmdDone(rootPath)
 	initWatcher(rootPath)
+	CmdDone(rootPath)
 
+	for {
+		<-exit
+		runtime.Goexit()
+	}
 	return nil
 }
