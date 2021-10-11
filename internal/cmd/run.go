@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"fmt"
-	"log"
+	// "log"
 	"os"
 	"os/exec"
 	"path"
@@ -30,12 +30,13 @@ var Run = cli.Command{
 }
 
 var (
-	runMutex  sync.Mutex
-	conf      *ZZZ
-	cmd       *exec.Cmd
-	exit      chan bool
-	eventTime = make(map[string]int64)
+	runMutex sync.Mutex
+	conf     *ZZZ
+	cmd      *exec.Cmd
+	exit     chan bool
 )
+var eventTime = make(map[string]int64)
+var started = make(chan bool)
 
 func init() {
 	exit = make(chan bool)
@@ -178,6 +179,8 @@ func CmdStart(rootPath string) {
 	go cmd.Run()
 
 	logger.Log.Successf("'%s' is running...", appName)
+
+	// started <- true
 }
 
 func CmdDone(rootPath string) {
@@ -186,20 +189,19 @@ func CmdDone(rootPath string) {
 	defer runMutex.Unlock()
 
 	CmdRunBefore(rootPath)
-	time.Sleep(1 * time.Second)
+	// time.Sleep(1 * time.Second)
 
 	CmdAutoBuild(rootPath)
 
-	time.Sleep(1 * time.Second)
+	// time.Sleep(1 * time.Second)
 	CmdRunAfter(rootPath)
+
 }
 
 func initWatcher(rootPath string) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		log.Fatal(err)
-
-		logger.Log.Infof("NewWatcher Error:'%v'", err)
+		logger.Log.Fatalf("Failed to create watcher: %s", err)
 	}
 	defer watcher.Close()
 
@@ -256,5 +258,6 @@ func CmdRun(c *cli.Context) error {
 
 	CmdDone(rootPath)
 	initWatcher(rootPath)
+
 	return nil
 }
