@@ -30,10 +30,11 @@ var Run = cli.Command{
 }
 
 var (
-	runMutex sync.Mutex
-	conf     *ZZZ
-	cmd      *exec.Cmd
-	exit     chan bool
+	runMutex  sync.Mutex
+	conf      *ZZZ
+	cmd       *exec.Cmd
+	exit      chan bool
+	eventTime = make(map[string]int64)
 )
 
 func init() {
@@ -64,7 +65,6 @@ func Kill() {
 		} else {
 			cmd.Process.Signal(os.Interrupt)
 		}
-
 		ch := make(chan struct{}, 1)
 		go func() {
 			cmd.Wait()
@@ -94,8 +94,7 @@ func isFilterFile(name string) bool {
 	return true
 }
 
-func CmdRunBefore() {
-	rootPath, _ := os.Getwd()
+func CmdRunBefore(rootPath string) {
 
 	logger.Log.Infof("App Run Before Hook Start")
 
@@ -103,7 +102,7 @@ func CmdRunBefore() {
 
 		tmpFile := rootPath + "/." + tools.Md5(sh) + ".sh"
 		tools.WriteFile(tmpFile, sh)
-		cmd = exec.Command("sh", []string{"-c", tmpFile}...)
+		cmd := exec.Command("sh", []string{"-c", tmpFile}...)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 
@@ -117,25 +116,23 @@ func CmdRunBefore() {
 
 }
 
-func CmdRunAfter() {
-	rootPath, _ := os.Getwd()
-
-	logger.Log.Infof("App Run After Hook Start")
+func CmdRunAfter(rootPath string) {
+	// logger.Log.Infof("App Run After Hook Start")
 	for _, sh := range conf.Action.After {
 
 		tmpFile := rootPath + "/." + tools.Md5(sh) + ".sh"
 		tools.WriteFile(tmpFile, sh)
-		cmd = exec.Command("sh", []string{"-c", tmpFile}...)
+		cmd := exec.Command("sh", []string{"-c", tmpFile}...)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 
 		err := cmd.Run()
 		if err != nil {
-			logger.Log.Errorf("Run After Hook Error:", err)
+			logger.Log.Errorf("Run After Hook Error:%v", err)
 		}
 		os.Remove(tmpFile)
 	}
-	logger.Log.Infof("App Run After Hook End")
+	// logger.Log.Infof("App Run After Hook End")
 }
 
 func CmdAutoBuild(rootPath string) {
@@ -155,12 +152,19 @@ func CmdAutoBuild(rootPath string) {
 	}
 
 	logger.Log.Success("Built Successfully!")
+	CmdRestart(rootPath)
 }
 
 func CmdRestart(rootPath string) {
 	Kill()
+	CmdStart(rootPath)
+}
+
+func CmdStart(rootPath string) {
+
 	os.Chdir(rootPath)
 	appName := path.Base(rootPath)
+	logger.Log.Infof("Restarting '%s'...", appName)
 
 	//start
 	if !strings.Contains(appName, "./") {
@@ -181,14 +185,13 @@ func CmdDone(rootPath string) {
 	runMutex.Lock()
 	defer runMutex.Unlock()
 
-	CmdRunBefore()
+	CmdRunBefore(rootPath)
 	time.Sleep(1 * time.Second)
 
 	CmdAutoBuild(rootPath)
-	CmdRestart(rootPath)
 
 	time.Sleep(1 * time.Second)
-	CmdRunAfter()
+	CmdRunAfter(rootPath)
 }
 
 func initWatcher(rootPath string) {
@@ -204,36 +207,35 @@ func initWatcher(rootPath string) {
 	go func() {
 		for {
 			select {
-			case ev, ok := <-watcher.Events:
-				if !ok {
-					return
+			case e := <-watcher.Events:
+				if isFilterFile(e.Name) {
+					continue
 				}
 
 				isBuild := true
 
-				//过滤不需要监控的文件
-				if !isFilterFile(ev.Name) && isBuild {
+				mt := tools.GetFileModTime(e.Name)
+				if t := eventTime[e.Name]; mt == t {
+					logger.Log.Hintf(colors.Bold("Skipping: ")+"%s", e.String())
+					isBuild = false
+				}
 
-					log.Println("event name:", ev)
+				eventTime[e.Name] = mt
+				if isBuild {
+
 					scheduleTime := time.Now().Add(1 * time.Second)
-					fmt.Println("dddd:", time.Now())
 					time.Sleep(time.Until(scheduleTime))
 
-					fmt.Println("dddd:", time.Now())
 					rootPath, _ := os.Getwd()
 					go CmdDone(rootPath)
 				}
-			case err, ok := <-watcher.Errors:
-				if !ok {
-					return
-				}
-				log.Println("watcher.Errors:", err)
+			case err := <-watcher.Errors:
+				logger.Log.Warnf("Watcher error: %s", err.Error()) // No need to exit here
 			}
 		}
 	}()
 
 	logger.Log.Info("Initializing watcher...")
-
 	dirs := tools.GetPathDir(rootPath, conf.DirFilter)
 	for _, d := range dirs {
 		err = watcher.Add(d)
@@ -242,7 +244,6 @@ func initWatcher(rootPath string) {
 			logger.Log.Fatalf("Failed to watch directory: %s", err)
 		}
 	}
-	// //
 	<-done
 }
 
