@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"fmt"
+	// "fmt"
 	// "log"
 	// "bytes"
 	"os"
@@ -243,12 +243,11 @@ func initWatcher(rootPath string) {
 				logger.Log.Warnf("Watcher error: %s", err.Error()) // No need to exit here
 			}
 		}
-
-		fmt.Println("end")
 	}()
 
 	logger.Log.Info("Initializing watcher...")
 	dirs := tools.GetPathDir(rootPath, conf.DirFilter)
+	dirs = tools.GetVailDir(dirs, conf.Ext)
 	for _, d := range dirs {
 		err = watcher.Add(d)
 		logger.Log.Hintf(colors.Bold("Watching: ")+"%s", d)

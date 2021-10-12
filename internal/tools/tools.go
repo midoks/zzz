@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path"
 	"strings"
 	"time"
 
@@ -64,6 +65,23 @@ func GetPathDir(path string, contain []string) []string {
 	}
 	dirs = append(dirs, path)
 	return dirs
+}
+
+func GetVailDir(paths []string, contain []string) []string {
+	var newDirs []string
+	for _, p := range paths {
+		files, _ := ioutil.ReadDir(p)
+		for _, f := range files {
+			fname := f.Name()
+			suffix := path.Ext(fname)
+			suffix = strings.Trim(suffix, ".")
+			if InArray(suffix, contain) {
+				newDirs = append(newDirs, p)
+				break
+			}
+		}
+	}
+	return newDirs
 }
 
 // IsFile returns true if given path exists as a file (i.e. not a directory).
