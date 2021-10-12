@@ -29,6 +29,7 @@ zzz new
 
 ```
 title: zzz
+frequency: 3
 dirfilter:
 - tmp
 - .git
@@ -47,6 +48,7 @@ action:
 
 ```
 
+- frequency:编译时间间隔,单位秒
 - dirfilter:不监控目录
 - ext:监控文件后缀
 - action.before:执行前处理
