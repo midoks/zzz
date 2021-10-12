@@ -4,6 +4,7 @@ go 1.17
 
 require (
 	github.com/fsnotify/fsnotify v1.5.1
+	github.com/robfig/cron v1.2.0
 	github.com/urfave/cli v1.22.5
 	gopkg.in/yaml.v2 v2.2.2
 )

@@ -22,6 +22,7 @@ var New = cli.Command{
 // correctly populate the data.
 type ZZZ struct {
 	Title     string
+	Frequency int64
 	DirFilter []string
 	Ext       []string
 	Action    struct {
@@ -44,6 +45,7 @@ func CmdNew(c *cli.Context) error {
 		conf := ZZZ{}
 		conf.Title = "zzz"
 		conf.Ext = append(conf.Ext, "go")
+		conf.Frequency = 3
 
 		conf.DirFilter = append(conf.DirFilter, "tmp")
 		conf.DirFilter = append(conf.DirFilter, ".git")

@@ -2,8 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	// "log"
-	// "bytes"
 	"os"
 	"os/exec"
 	"path"
@@ -12,12 +10,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/robfig/cron"
+	"github.com/urfave/cli"
+	"gopkg.in/yaml.v2"
+
 	"github.com/fsnotify/fsnotify"
 	"github.com/midoks/zzz/internal/logger"
 	"github.com/midoks/zzz/internal/logger/colors"
 	"github.com/midoks/zzz/internal/tools"
-	"github.com/urfave/cli"
-	"gopkg.in/yaml.v2"
 )
 
 var Run = cli.Command{
@@ -50,6 +50,7 @@ func init() {
 	} else {
 		conf.DirFilter = []string{".git", ".github", "vendor", ".DS_Store", "tmp", ".bak", ".chk"}
 		conf.Ext = []string{"go"}
+		conf.Frequency = 3
 	}
 }
 
@@ -208,7 +209,7 @@ func initWatcher(rootPath string) {
 		logger.Log.Fatalf("Failed to create watcher: %s", err)
 	}
 	// defer watcher.Close()
-	// done := make(chan bool)
+	doneRun := make(chan int64)
 	go func() {
 		for {
 			select {
@@ -218,29 +219,45 @@ func initWatcher(rootPath string) {
 				}
 
 				isBuild := true
-
 				mt := tools.GetFileModTime(e.Name)
 				if t := eventTime[e.Name]; mt == t {
 					logger.Log.Hintf(colors.Bold("Skipping: ")+"%s", e.String())
 					isBuild = false
 				}
 
-				fmt.Println(e.Name, mt)
-
 				eventTime[e.Name] = mt
+
 				if isBuild {
-
-					scheduleTime := time.Now().Add(1 * time.Second)
-					time.Sleep(time.Until(scheduleTime))
-
-					rootPath, _ := os.Getwd()
-					go CmdDone(rootPath)
+					doneRun <- mt
 				}
 			case err := <-watcher.Errors:
 				logger.Log.Warnf("Watcher error: %s", err.Error()) // No need to exit here
 			}
 		}
 	}()
+
+	var changeTime int64
+	c := cron.New()
+
+	go func() {
+		for {
+			changeTime = <-doneRun
+			c.Start()
+		}
+	}()
+
+	cronSpec := fmt.Sprintf("@@every %ds", conf.Frequency)
+	c.AddFunc(cronSpec, func() {
+		if changeTime > 0 {
+
+			if changeTime+conf.Frequency < time.Now().Unix() {
+				rootPath, _ := os.Getwd()
+				go CmdDone(rootPath)
+				c.Stop()
+			}
+		}
+	})
+	c.Start()
 
 	logger.Log.Info("Initializing watcher...")
 	dirs := tools.GetPathDir(rootPath, conf.DirFilter)
