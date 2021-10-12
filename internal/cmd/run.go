@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	// "fmt"
+	"fmt"
 	// "log"
 	// "bytes"
 	"os"
@@ -48,7 +48,7 @@ func init() {
 		content, _ := tools.ReadFile(file)
 		yaml.Unmarshal([]byte(content), conf)
 	} else {
-		conf.DirFilter = []string{".git", ".github", "vendor", ".DS_Store", "tmp"}
+		conf.DirFilter = []string{".git", ".github", "vendor", ".DS_Store", "tmp", ".bak", ".chk"}
 		conf.Ext = []string{"go"}
 	}
 }
@@ -143,11 +143,6 @@ func CmdAutoBuild(rootPath string) {
 	appName := path.Base(rootPath)
 
 	cmdName := "go"
-
-	var (
-		err error
-		// stderr bytes.Buffer
-	)
 	//build
 	args := []string{"build"}
 	args = append(args, "-o", appName)
@@ -156,7 +151,7 @@ func CmdAutoBuild(rootPath string) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	err = cmd.Run()
+	err := cmd.Run()
 	if err != nil {
 		logger.Log.Errorf("Failed to build the application: %s", err.Error())
 	}
@@ -229,6 +224,8 @@ func initWatcher(rootPath string) {
 					logger.Log.Hintf(colors.Bold("Skipping: ")+"%s", e.String())
 					isBuild = false
 				}
+
+				fmt.Println(e.Name, mt)
 
 				eventTime[e.Name] = mt
 				if isBuild {
