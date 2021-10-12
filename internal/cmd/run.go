@@ -140,10 +140,18 @@ func CmdRunAfter(rootPath string) {
 }
 
 func CmdAutoBuild(rootPath string) {
+	cmdName := "go"
+
+	//for install
+	icmd := exec.Command(cmdName, "install", "-v")
+	icmd.Stdout = os.Stdout
+	icmd.Stderr = os.Stderr
+	icmd.Env = append(os.Environ(), "GOGC=off")
+	icmd.Run()
+
 	os.Chdir(rootPath)
 	appName := path.Base(rootPath)
 
-	cmdName := "go"
 	//build
 	args := []string{"build"}
 	args = append(args, "-o", appName)
