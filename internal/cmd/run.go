@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -140,6 +141,10 @@ func CmdRunAfter(rootPath string) {
 }
 
 func CmdAutoBuild(rootPath string) {
+	var (
+		err    error
+		stderr bytes.Buffer
+	)
 	cmdName := "go"
 
 	//for install
@@ -152,17 +157,21 @@ func CmdAutoBuild(rootPath string) {
 	os.Chdir(rootPath)
 	appName := path.Base(rootPath)
 
+	if runtime.GOOS == "windows" {
+		appName += ".exe"
+	}
 	//build
 	args := []string{"build"}
 	args = append(args, "-o", appName)
 
 	cmd := exec.Command(cmdName, args...)
 	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stderr = &stderr
 
-	err := cmd.Run()
+	err = cmd.Run()
 	if err != nil {
-		logger.Log.Errorf("Failed to build the application: %s", err.Error())
+		logger.Log.Errorf("Failed to build the application: %s", stderr.String())
+		return
 	}
 
 	logger.Log.Success("Built Successfully!")
