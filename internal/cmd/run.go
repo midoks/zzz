@@ -246,7 +246,7 @@ func initWatcher(rootPath string) {
 		}
 	}()
 
-	cronSpec := fmt.Sprintf("@@every %ds", conf.Frequency)
+	cronSpec := fmt.Sprintf("@every %ds", conf.Frequency)
 	c.AddFunc(cronSpec, func() {
 		if changeTime > 0 {
 
