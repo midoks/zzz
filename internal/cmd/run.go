@@ -27,16 +27,18 @@ var Run = cli.Command{
 	Description: `Run the application by starting a local development server`,
 	Action:      CmdRun,
 	Flags: []cli.Flag{
-		stringFlag("config, c", "", "Custom configuration file path"),
+		stringFlag("ldflags, ld", "", "Set the build ldflags. See: https://golang.org/pkg/go/build/"),
 	},
 }
 
 var (
-	runMutex sync.Mutex
-	conf     *ZZZ
-	cmd      *exec.Cmd
-	exit     chan bool
+	runMutex     sync.Mutex
+	conf         *ZZZ
+	cmd          *exec.Cmd
+	exit         chan bool
+	buildLDFlags string
 )
+
 var eventTime = make(map[string]int64)
 var started = make(chan bool)
 
@@ -164,7 +166,13 @@ func CmdAutoBuild(rootPath string) {
 	args := []string{"build"}
 	args = append(args, "-o", appName)
 
+	buildLDFlags = strings.TrimSpace(buildLDFlags)
+	if buildLDFlags != "" {
+		args = append(args, "-ldflags", buildLDFlags)
+	}
+
 	cmd := exec.Command(cmdName, args...)
+	cmd.Env = append(os.Environ(), "GOGC=off")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = &stderr
 
@@ -291,6 +299,8 @@ func initWatcher(rootPath string) {
 
 func CmdRun(c *cli.Context) error {
 	ShowShortVersionBanner()
+
+	buildLDFlags = c.String("ldflags")
 
 	rootPath, _ := os.Getwd()
 	appName := path.Base(rootPath)
