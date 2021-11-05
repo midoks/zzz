@@ -54,6 +54,7 @@ func init() {
 		conf.DirFilter = []string{".git", ".github", "vendor", ".DS_Store", "tmp", ".bak", ".chk"}
 		conf.Ext = []string{"go"}
 		conf.Frequency = 3
+		conf.EnableRun = true
 	}
 }
 
@@ -221,7 +222,9 @@ func CmdDone(rootPath string) {
 	CmdRunBefore(rootPath)
 	// time.Sleep(1 * time.Second)
 
-	CmdAutoBuild(rootPath)
+	if conf.EnableRun {
+		CmdAutoBuild(rootPath)
+	}
 
 	// time.Sleep(1 * time.Second)
 	CmdRunAfter(rootPath)

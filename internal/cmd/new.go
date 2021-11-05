@@ -25,6 +25,7 @@ type ZZZ struct {
 	Frequency int64
 	DirFilter []string
 	Ext       []string
+	EnableRun bool
 	Action    struct {
 		Before []string `yaml:"before"`
 		After  []string `yaml:"after"`
@@ -46,6 +47,7 @@ func CmdNew(c *cli.Context) error {
 		conf.Title = "zzz"
 		conf.Ext = append(conf.Ext, "go")
 		conf.Frequency = 3
+		conf.EnableRun = true
 
 		conf.DirFilter = append(conf.DirFilter, "tmp")
 		conf.DirFilter = append(conf.DirFilter, ".git")
