@@ -10,6 +10,7 @@ dirfilter:
 - templates
 ext:
 - go
+enablerun: true
 action:
   before:
   - find . -name ".DS_Store" -print -delete
