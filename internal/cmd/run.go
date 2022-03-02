@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path"
@@ -141,6 +143,32 @@ func CmdRunAfter(rootPath string) {
 		os.Remove(tmpFile)
 	}
 	// logger.Log.Infof("App Run After Hook End")
+}
+
+func execCmd(shell string, raw []string) (int, error) {
+	cmd := exec.Command(shell, raw...)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return 1, err
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return 2, err
+	}
+	if err := cmd.Start(); err != nil {
+		return 3, err
+	}
+
+	s := bufio.NewScanner(io.MultiReader(stdout, stderr))
+	for s.Scan() {
+		text := s.Text()
+		logger.Log.Errorf("ulimit:\n %s", text)
+	}
+
+	if err := cmd.Wait(); err != nil {
+		return 4, err
+	}
+	return 0, nil
 }
 
 func CmdAutoBuild(rootPath string) {
@@ -291,6 +319,7 @@ func initWatcher(rootPath string) {
 	dirs := tools.GetPathDir(rootPath, conf.DirFilter)
 	dirs = tools.GetVailDir(dirs, conf.Ext)
 	for _, d := range dirs {
+		// fmt.Println(d)
 		err = watcher.Add(d)
 		logger.Log.Hintf(colors.Bold("Watching: ")+"%s", d)
 		if err != nil {
