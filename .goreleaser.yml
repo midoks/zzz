@@ -20,8 +20,6 @@ builds:
       - linux
       - darwin
       - windows
-    hooks:
-      pre: dep ensure
 archives:
 
   - files:
