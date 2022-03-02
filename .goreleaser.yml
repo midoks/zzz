@@ -3,8 +3,8 @@
 # https://www.jianshu.com/p/ac18956b0bc0
 
 
-# git tag -a v0.0.3 -m "release v0.0.3"
-# git push origin v0.0.3
+# git tag -a v0.0.2 -m "release v0.0.2"
+# git push origin v0.0.2
 # goreleaser --rm-dist
 
 before:
@@ -34,6 +34,22 @@ archives:
 
 checksum:
   name_template: 'checksums.txt'
+
+release:
+  # Repo in which the release will be created.
+  # Default is extracted from the origin remote URL.
+  github:
+    owner: midoks
+    name: zzz
+
+  # If set to true, will not auto-publish the release.
+  # Default is false.
+  draft: false
+
+  # If set to true, will mark the release as not ready for production.
+  # Default is false.
+  prerelease: false
+
 snapshot:
   name_template: "{{ .Tag }}"
 changelog:
