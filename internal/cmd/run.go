@@ -323,7 +323,9 @@ func initWatcher(rootPath string) {
 		err = watcher.Add(d)
 		logger.Log.Hintf(colors.Bold("Watching: ")+"%s", d)
 		if err != nil {
+			logger.Log.Info("It may be that the open file limit setting is too small, ulimit -n 2048.")
 			logger.Log.Fatalf("Failed to watch directory: %s", err)
+
 		}
 	}
 	// <-done
