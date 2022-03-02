@@ -75,7 +75,7 @@ func GetVailDir(paths []string, contain []string) []string {
 			fname := f.Name()
 			suffix := path.Ext(fname)
 			suffix = strings.Trim(suffix, ".")
-			if InArray(suffix, contain) {
+			if InArray(suffix, contain) && !InArray(p, newDirs) {
 				newDirs = append(newDirs, p)
 				break
 			}
