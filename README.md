@@ -39,11 +39,13 @@ dirfilter:
 - templates
 ext:
 - go
+enablerun: true
 action:
   before:
   - find . -name ".DS_Store" -print -delete
   after:
   - echo "zzz end"
+link: https://github.com/midoks/zzz
 
 ```
 
@@ -52,3 +54,4 @@ action:
 - ext:监控文件后缀
 - action.before:执行前处理
 - action.after:执行后处理
+- enablerun:是否直接执行[go]
