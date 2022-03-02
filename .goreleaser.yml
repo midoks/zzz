@@ -1,6 +1,12 @@
 # This is an example .goreleaser.yml file with some sensible defaults.
 # Make sure to check the documentation at https://goreleaser.com
 # https://www.jianshu.com/p/ac18956b0bc0
+
+
+# git tag -a v0.0.2 -m "release v0.0.2"
+# git push origin v0.0.2
+# goreleaser --rm-dist
+
 before:
   hooks:
     # You may remove this if you don't use go modules.
