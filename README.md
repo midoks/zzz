@@ -56,5 +56,5 @@ link: https://github.com/midoks/zzz
 - ext:监控文件后缀
 - action.before:执行前处理
 - action.after:执行后处理
-- action.exit:推出执行
+- action.exit:退出执行
 - enablerun:是否直接执行[go]
