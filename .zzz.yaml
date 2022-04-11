@@ -15,6 +15,7 @@ action:
   before:
   - find . -name ".DS_Store" -print -delete
   after:
-  - echo "zzz end"
-open_file_limit: 1024
+  - zzz -v
+  exit:
+  - echo "exit zzz"
 link: https://github.com/midoks/zzz

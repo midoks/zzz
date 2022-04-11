@@ -12,7 +12,7 @@ import (
 
 var New = cli.Command{
 	Name:        "new",
-	Usage:       "create zzz configuration file",
+	Usage:       "create zzz file",
 	Description: `create zzz configuration file`,
 	Action:      CmdNew,
 	Flags:       []cli.Flag{},
@@ -29,6 +29,7 @@ type ZZZ struct {
 	Action    struct {
 		Before []string `yaml:"before"`
 		After  []string `yaml:"after"`
+		Exit   []string `yaml:"exit"`
 	}
 	Link string
 }
@@ -59,6 +60,7 @@ func CmdNew(c *cli.Context) error {
 
 		conf.Action.Before = append(conf.Action.Before, "echo \"zzz start\"")
 		conf.Action.After = append(conf.Action.After, "echo \"zzz end\"")
+		conf.Action.Exit = append(conf.Action.Exit, "echo \"exit\"")
 		conf.Link = "https://github.com/midoks/zzz"
 
 		d, err := yaml.Marshal(&conf)

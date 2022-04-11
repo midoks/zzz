@@ -7,10 +7,12 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path"
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/robfig/cron"
@@ -25,7 +27,7 @@ import (
 
 var Run = cli.Command{
 	Name:        "run",
-	Usage:       "Run the application by starting a local development server",
+	Usage:       "Run the application",
 	Description: `Run the application by starting a local development server`,
 	Action:      CmdRun,
 	Flags: []cli.Flag{
@@ -37,15 +39,21 @@ var (
 	runMutex     sync.Mutex
 	conf         *ZZZ
 	cmd          *exec.Cmd
-	exit         chan bool
 	buildLDFlags string
 )
+
+// var  exit  chan bool
+// exit = make(chan bool)
+// for {
+// 	<-exit
+// 	runtime.Goexit()
+// }
 
 var eventTime = make(map[string]int64)
 var started = make(chan bool)
 
 func init() {
-	exit = make(chan bool)
+
 	rootPath, _ := os.Getwd()
 	file := rootPath + "/" + Zfile
 	conf = new(ZZZ)
@@ -143,6 +151,23 @@ func CmdRunAfter(rootPath string) {
 		os.Remove(tmpFile)
 	}
 	// logger.Log.Infof("App Run After Hook End")
+}
+
+func CmdRunExit(rootPath string) {
+	for _, sh := range conf.Action.Exit {
+
+		tmpFile := rootPath + "/." + tools.Md5(sh) + ".sh"
+		tools.WriteFile(tmpFile, sh)
+		cmd := exec.Command("sh", []string{"-c", tmpFile}...)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		err := cmd.Run()
+		if err != nil {
+			logger.Log.Errorf("Run after exit error:%v", err)
+		}
+		os.Remove(tmpFile)
+	}
 }
 
 func execCmd(shell string, raw []string) (int, error) {
@@ -344,8 +369,16 @@ func CmdRun(c *cli.Context) error {
 	CmdDone(rootPath)
 
 	for {
-		<-exit
-		runtime.Goexit()
+		chanel := make(chan os.Signal)
+		signal.Notify(chanel, syscall.SIGINT)
+		sig := <-chanel
+
+		if sig == syscall.SIGINT {
+			fmt.Println("\n")
+			logger.Log.Info(fmt.Sprintf("exit: %s", appName))
+			CmdRunExit(rootPath)
+			break
+		}
 	}
 	return nil
 }
