@@ -119,27 +119,38 @@ func CmdRunBefore(rootPath string) {
 	for _, sh := range conf.Action.Before {
 
 		tmpFile := rootPath + "/." + tools.Md5(sh) + ".sh"
-		tools.WriteFile(tmpFile, sh)
+		werr := tools.WriteFile(tmpFile, sh)
+		if werr != nil {
+			logger.Log.Errorf("Write before hook script error: %s", werr)
+		}
+
 		cmd := exec.Command("sh", []string{"-c", tmpFile}...)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 
 		err := cmd.Run()
 		if err != nil {
-			logger.Log.Errorf("Run before hook error: %s", err)
+			logger.Log.Errorf("Run Before hook error: %s", err)
 		}
-		os.Remove(tmpFile)
+
+		if tools.IsExist(tmpFile) {
+			os.Remove(tmpFile)
+		}
+
 	}
 	logger.Log.Infof("App run before hook end")
 
 }
 
 func CmdRunAfter(rootPath string) {
-	// logger.Log.Infof("App Run After Hook Start")
+	logger.Log.Infof("App Run After Hook Start")
 	for _, sh := range conf.Action.After {
 
 		tmpFile := rootPath + "/." + tools.Md5(sh) + ".sh"
-		tools.WriteFile(tmpFile, sh)
+		werr := tools.WriteFile(tmpFile, sh)
+		if werr != nil {
+			logger.Log.Errorf("Write After hook script error: %s", werr)
+		}
 		cmd := exec.Command("sh", []string{"-c", tmpFile}...)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -148,16 +159,22 @@ func CmdRunAfter(rootPath string) {
 		if err != nil {
 			logger.Log.Errorf("Run after hook error:%v", err)
 		}
-		os.Remove(tmpFile)
+		if tools.IsExist(tmpFile) {
+			os.Remove(tmpFile)
+		}
 	}
-	// logger.Log.Infof("App Run After Hook End")
+	logger.Log.Infof("App Run After Hook End")
 }
 
 func CmdRunExit(rootPath string) {
+	logger.Log.Infof("App Run Exit Hook Start")
 	for _, sh := range conf.Action.Exit {
 
 		tmpFile := rootPath + "/." + tools.Md5(sh) + ".sh"
-		tools.WriteFile(tmpFile, sh)
+		werr := tools.WriteFile(tmpFile, sh)
+		if werr != nil {
+			logger.Log.Errorf("Write Exit hook script error: %s", werr)
+		}
 		cmd := exec.Command("sh", []string{"-c", tmpFile}...)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -166,8 +183,11 @@ func CmdRunExit(rootPath string) {
 		if err != nil {
 			logger.Log.Errorf("Run after exit error:%v", err)
 		}
-		os.Remove(tmpFile)
+		if tools.IsExist(tmpFile) {
+			os.Remove(tmpFile)
+		}
 	}
+	logger.Log.Infof("App Run Exit Hook End")
 }
 
 func execCmd(shell string, raw []string) (int, error) {
