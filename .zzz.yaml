@@ -13,7 +13,8 @@ ext:
 enablerun: true
 action:
   before:
-  - find . -name ".DS_Store" -print -delete
+  - echo "before"
+  # - find . -name ".DS_Store" -print -delete
   after:
   - zzz -v
   exit:

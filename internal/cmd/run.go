@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -112,19 +113,32 @@ func isFilterFile(name string) bool {
 	return true
 }
 
+func GetBashFileSuffix() string {
+	if runtime.GOOS == "windows" {
+		return "bat"
+	}
+	return "sh"
+}
+
+
 func CmdRunBefore(rootPath string) {
 
 	logger.Log.Infof("App run before hook start")
 
 	for _, sh := range conf.Action.Before {
 
-		tmpFile := rootPath + "/." + tools.Md5(sh) + ".sh"
+		fileSuffix := GetBashFileSuffix()
+		tmpFile := rootPath + "/." + tools.Md5(sh) + "."+fileSuffix
 		werr := tools.WriteFile(tmpFile, sh)
 		if werr != nil {
 			logger.Log.Errorf("Write before hook script error: %s", werr)
 		}
 
 		cmd := exec.Command("sh", []string{"-c", tmpFile}...)
+		if runtime.GOOS == "windows" {
+			cmd = exec.Command("cmd", "/C", tmpFile)
+		}
+
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 
@@ -146,12 +160,17 @@ func CmdRunAfter(rootPath string) {
 	logger.Log.Infof("App Run After Hook Start")
 	for _, sh := range conf.Action.After {
 
-		tmpFile := rootPath + "/." + tools.Md5(sh) + ".sh"
+		fileSuffix := GetBashFileSuffix()
+		tmpFile := rootPath + "/." + tools.Md5(sh) + "."+fileSuffix
 		werr := tools.WriteFile(tmpFile, sh)
 		if werr != nil {
 			logger.Log.Errorf("Write After hook script error: %s", werr)
 		}
 		cmd := exec.Command("sh", []string{"-c", tmpFile}...)
+		if runtime.GOOS == "windows" {
+			cmd = exec.Command("cmd", "/C", tmpFile)
+		}
+
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 
@@ -169,13 +188,17 @@ func CmdRunAfter(rootPath string) {
 func CmdRunExit(rootPath string) {
 	logger.Log.Infof("App Run Exit Hook Start")
 	for _, sh := range conf.Action.Exit {
-
-		tmpFile := rootPath + "/." + tools.Md5(sh) + ".sh"
+		fileSuffix := GetBashFileSuffix()
+		tmpFile := rootPath + "/." + tools.Md5(sh) + "."+fileSuffix
 		werr := tools.WriteFile(tmpFile, sh)
 		if werr != nil {
 			logger.Log.Errorf("Write Exit hook script error: %s", werr)
 		}
 		cmd := exec.Command("sh", []string{"-c", tmpFile}...)
+		if runtime.GOOS == "windows" {
+			cmd = exec.Command("cmd", "/C", tmpFile)
+		}
+
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 
@@ -231,6 +254,7 @@ func CmdAutoBuild(rootPath string) {
 	icmd.Run()
 
 	os.Chdir(rootPath)
+	rootPath = filepath.ToSlash(rootPath)
 	appName := path.Base(rootPath)
 
 	if runtime.GOOS == "windows" {
@@ -245,6 +269,7 @@ func CmdAutoBuild(rootPath string) {
 		args = append(args, "-ldflags", buildLDFlags)
 	}
 
+	// fmt.Println(cmdName, args)
 	cmd := exec.Command(cmdName, args...)
 	cmd.Env = append(os.Environ(), "GOGC=off")
 	cmd.Stdout = os.Stdout
@@ -275,6 +300,7 @@ func CmdStart(rootPath string) {
 	if !strings.Contains(appName, "./") {
 		appName = "./" + appName
 	}
+	// fmt.Println(appName)
 
 	cmd = exec.Command(appName)
 	cmd.Stdout = os.Stdout
