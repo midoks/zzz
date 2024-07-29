@@ -120,7 +120,6 @@ func GetBashFileSuffix() string {
 	return "sh"
 }
 
-
 func CmdRunBefore(rootPath string) {
 
 	logger.Log.Infof("App run before hook start")
@@ -128,7 +127,7 @@ func CmdRunBefore(rootPath string) {
 	for _, sh := range conf.Action.Before {
 
 		fileSuffix := GetBashFileSuffix()
-		tmpFile := rootPath + "/." + tools.Md5(sh) + "."+fileSuffix
+		tmpFile := rootPath + "/." + tools.Md5(sh) + "." + fileSuffix
 		werr := tools.WriteFile(tmpFile, sh)
 		if werr != nil {
 			logger.Log.Errorf("Write before hook script error: %s", werr)
@@ -161,7 +160,7 @@ func CmdRunAfter(rootPath string) {
 	for _, sh := range conf.Action.After {
 
 		fileSuffix := GetBashFileSuffix()
-		tmpFile := rootPath + "/." + tools.Md5(sh) + "."+fileSuffix
+		tmpFile := rootPath + "/." + tools.Md5(sh) + "." + fileSuffix
 		werr := tools.WriteFile(tmpFile, sh)
 		if werr != nil {
 			logger.Log.Errorf("Write After hook script error: %s", werr)
@@ -189,7 +188,7 @@ func CmdRunExit(rootPath string) {
 	logger.Log.Infof("App Run Exit Hook Start")
 	for _, sh := range conf.Action.Exit {
 		fileSuffix := GetBashFileSuffix()
-		tmpFile := rootPath + "/." + tools.Md5(sh) + "."+fileSuffix
+		tmpFile := rootPath + "/." + tools.Md5(sh) + "." + fileSuffix
 		werr := tools.WriteFile(tmpFile, sh)
 		if werr != nil {
 			logger.Log.Errorf("Write Exit hook script error: %s", werr)
