@@ -316,9 +316,8 @@ func CmdStart(rootPath string) {
 }
 
 func CmdDone(rootPath string) {
-
-	runMutex.Lock()
-	defer runMutex.Unlock()
+	// runMutex.Lock()
+	// defer runMutex.Unlock()
 
 	CmdRunBefore(rootPath)
 	// time.Sleep(1 * time.Second)
@@ -326,7 +325,6 @@ func CmdDone(rootPath string) {
 	if conf.EnableRun {
 		CmdAutoBuild(rootPath)
 	}
-
 	// time.Sleep(1 * time.Second)
 	CmdRunAfter(rootPath)
 
@@ -381,6 +379,7 @@ func initWatcher(rootPath string) {
 
 			if changeTime+conf.Frequency < time.Now().Unix() {
 				rootPath, _ := os.Getwd()
+				logger.Log.Success("Reconstruction in progress, please wait...")
 				go CmdDone(rootPath)
 				c.Stop()
 			}

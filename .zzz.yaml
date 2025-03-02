@@ -3,11 +3,9 @@ frequency: 3
 dirfilter:
 - tmp
 - .git
-- public
 - scripts
 - vendor
 - logs
-- templates
 ext:
 - go
 enablerun: true
