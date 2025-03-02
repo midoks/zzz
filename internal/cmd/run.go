@@ -57,6 +57,9 @@ func init() {
 
 	rootPath, _ := os.Getwd()
 	file := rootPath + "/" + Zfile
+	if runtime.GOOS == "windows" {
+		file = rootPath + "/" + ZfileWindow
+	}
 	conf = new(ZZZ)
 	if tools.IsExist(file) {
 		content, _ := tools.ReadFile(file)

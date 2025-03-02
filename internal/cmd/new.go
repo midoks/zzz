@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"runtime"
 
 	"github.com/urfave/cli"
 	"gopkg.in/yaml.v2"
@@ -35,11 +36,16 @@ type ZZZ struct {
 }
 
 const Zfile = ".zzz.yaml"
+const ZfileWindow = ".zzz.windows.yaml"
 
 func CmdNew(c *cli.Context) error {
 
 	rootPath, _ := os.Getwd()
 	file := rootPath + "/" + Zfile
+	if runtime.GOOS == "windows" {
+		file = rootPath + "/" + ZfileWindow
+	}
+
 	if tools.IsExist(file) {
 		fmt.Println("configuration file is exist!")
 	} else {
