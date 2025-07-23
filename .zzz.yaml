@@ -1,5 +1,6 @@
 title: zzz
 frequency: 3
+lang: "go"
 dirfilter:
 - tmp
 - .git

@@ -26,6 +26,7 @@ type ZZZ struct {
 	Frequency int64
 	DirFilter []string
 	Ext       []string
+	Lang      string
 	EnableRun bool
 	Action    struct {
 		Before []string `yaml:"before"`

@@ -65,10 +65,21 @@ func init() {
 		content, _ := tools.ReadFile(file)
 		yaml.Unmarshal([]byte(content), conf)
 	} else {
-		conf.DirFilter = []string{".git", ".github", "vendor", ".DS_Store", "tmp", ".bak", ".chk"}
-		conf.Ext = []string{"go"}
-		conf.Frequency = 3
-		conf.EnableRun = true
+
+		if tools.IsRustP() {
+			conf.DirFilter = []string{".git", ".github", "target", ".DS_Store", "tmp", ".bak", ".chk"}
+			conf.Ext = []string{"rs"}
+			conf.Lang = "rust"
+			conf.Frequency = 3
+			conf.EnableRun = true
+		} else {
+			conf.DirFilter = []string{".git", ".github", "vendor", ".DS_Store", "tmp", ".bak", ".chk"}
+			conf.Ext = []string{"go"}
+			conf.Lang = "go"
+			conf.Frequency = 3
+			conf.EnableRun = true
+		}
+
 	}
 }
 
@@ -276,7 +287,6 @@ func CmdAutoBuild(rootPath string) {
 	cmd.Env = append(os.Environ(), "GOGC=off")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = &stderr
-
 	err = cmd.Run()
 	if err != nil {
 		logger.Log.Errorf("Failed to build the application: %s", stderr.String())
@@ -323,7 +333,15 @@ func CmdDone(rootPath string) {
 	// time.Sleep(1 * time.Second)
 
 	if conf.EnableRun {
-		CmdAutoBuild(rootPath)
+
+		if tools.IsRustP() {
+			CmdAutoBuildRust(rootPath)
+		} else if tools.IsGoP() {
+			CmdAutoBuild(rootPath)
+		} else {
+			logger.Log.Info("Invalid language environment")
+		}
+
 	}
 	// time.Sleep(1 * time.Second)
 	CmdRunAfter(rootPath)
@@ -391,7 +409,7 @@ func initWatcher(rootPath string) {
 	dirs := tools.GetPathDir(rootPath, conf.DirFilter)
 	dirs = tools.GetVailDir(dirs, conf.Ext)
 	for _, d := range dirs {
-		// fmt.Println(d)
+		// fmt.Println("xxx:",d)
 		err = watcher.Add(d)
 		logger.Log.Hintf(colors.Bold("Watching: ")+"%s", d)
 		if err != nil {

@@ -12,6 +12,20 @@ import (
 	"github.com/midoks/zzz/internal/logger"
 )
 
+func IsGoP() bool {
+	if IsExist("go.mod") {
+		return true
+	}
+	return false
+}
+
+func IsRustP() bool {
+	if IsExist("Cargo.toml") {
+		return true
+	}
+	return false
+}
+
 func InArray(in string, arr []string) bool {
 	for _, a := range arr {
 		if strings.EqualFold(in, a) {
