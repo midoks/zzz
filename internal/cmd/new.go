@@ -52,23 +52,49 @@ func CmdNew(c *cli.Context) error {
 	} else {
 
 		conf := ZZZ{}
-		conf.Title = "zzz"
-		conf.Ext = append(conf.Ext, "go")
-		conf.Frequency = 3
-		conf.EnableRun = true
 
-		conf.DirFilter = append(conf.DirFilter, "tmp")
-		conf.DirFilter = append(conf.DirFilter, ".git")
-		conf.DirFilter = append(conf.DirFilter, "public")
-		conf.DirFilter = append(conf.DirFilter, "scripts")
-		conf.DirFilter = append(conf.DirFilter, "vendor")
-		conf.DirFilter = append(conf.DirFilter, "logs")
-		conf.DirFilter = append(conf.DirFilter, "templates")
+		if tools.IsRustP() {
+			conf.Title = "zzz"
+			conf.Lang = "rust"
+			conf.Ext = append(conf.Ext, "rs")
+			conf.Frequency = 3
+			conf.EnableRun = true
 
-		conf.Action.Before = append(conf.Action.Before, "echo \"zzz start\"")
-		conf.Action.After = append(conf.Action.After, "echo \"zzz end\"")
-		conf.Action.Exit = append(conf.Action.Exit, "echo \"exit\"")
-		conf.Link = "https://github.com/midoks/zzz"
+			conf.DirFilter = append(conf.DirFilter, "tmp")
+			conf.DirFilter = append(conf.DirFilter, ".git")
+			conf.DirFilter = append(conf.DirFilter, "public")
+			conf.DirFilter = append(conf.DirFilter, "scripts")
+			conf.DirFilter = append(conf.DirFilter, "target")
+			conf.DirFilter = append(conf.DirFilter, "logs")
+			conf.DirFilter = append(conf.DirFilter, "templates")
+
+			conf.Action.Before = append(conf.Action.Before, "echo \"zzz start\"")
+			conf.Action.After = append(conf.Action.After, "echo \"zzz end\"")
+			conf.Action.Exit = append(conf.Action.Exit, "echo \"exit\"")
+			conf.Link = "https://github.com/midoks/zzz"
+
+		} else {
+
+			conf.Title = "zzz"
+			conf.Lang = "go"
+			conf.Ext = append(conf.Ext, "go")
+			conf.Frequency = 3
+			conf.EnableRun = true
+
+			conf.DirFilter = append(conf.DirFilter, "tmp")
+			conf.DirFilter = append(conf.DirFilter, ".git")
+			conf.DirFilter = append(conf.DirFilter, "public")
+			conf.DirFilter = append(conf.DirFilter, "scripts")
+			conf.DirFilter = append(conf.DirFilter, "vendor")
+			conf.DirFilter = append(conf.DirFilter, "logs")
+			conf.DirFilter = append(conf.DirFilter, "templates")
+
+			conf.Action.Before = append(conf.Action.Before, "echo \"zzz start\"")
+			conf.Action.After = append(conf.Action.After, "echo \"zzz end\"")
+			conf.Action.Exit = append(conf.Action.Exit, "echo \"exit\"")
+			conf.Link = "https://github.com/midoks/zzz"
+
+		}
 
 		d, err := yaml.Marshal(&conf)
 		if err != nil {
