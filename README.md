@@ -4,7 +4,10 @@ Go实时开发小工具
 
 ```
 原来用的bee，很好用哈。最近开发项目遇到一个需求。需求是编译前预处理一下，所以搞一下。
+
 ```
+
+支持golang,rust实时编译
 
 ### 安装
 
@@ -29,6 +32,7 @@ zzz new
 ```
 title: zzz
 frequency: 3
+lang: go
 dirfilter:
 - tmp
 - .git
