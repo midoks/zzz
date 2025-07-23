@@ -56,6 +56,7 @@ link: https://github.com/midoks/zzz
 ```
 
 - frequency:编译时间间隔,单位秒
+- lang: 仅支持go|rust
 - dirfilter:不监控目录
 - ext:监控文件后缀
 - action.before:执行前处理
