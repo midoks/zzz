@@ -16,13 +16,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/robfig/cron"
 	"github.com/urfave/cli"
 	"gopkg.in/yaml.v2"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/midoks/zzz/internal/cache"
 	"github.com/midoks/zzz/internal/logger"
 	"github.com/midoks/zzz/internal/logger/colors"
+	"github.com/midoks/zzz/internal/monitor"
 	"github.com/midoks/zzz/internal/tools"
 )
 
@@ -37,84 +38,201 @@ var Run = cli.Command{
 }
 
 var (
-	runMutex     sync.Mutex
+	runMutex     sync.RWMutex
 	conf         *ZZZ
 	cmd          *exec.Cmd
 	buildLDFlags string
+	eventTime    = make(map[string]int64)
+	started      = make(chan bool, 1)
+	isBuilding   = false
+	fileCache    = make(map[string]os.FileInfo)
+	cacheMutex   sync.RWMutex
+	buildCache   *cache.BuildCache
 )
 
-// var  exit  chan bool
-// exit = make(chan bool)
-// for {
-// 	<-exit
-// 	runtime.Goexit()
-// }
-
-var eventTime = make(map[string]int64)
-var started = make(chan bool)
-
 func init() {
-
 	rootPath, _ := os.Getwd()
 	file := rootPath + "/" + Zfile
 	if runtime.GOOS == "windows" {
 		file = rootPath + "/" + ZfileWindow
 	}
+
 	conf = new(ZZZ)
 	if tools.IsExist(file) {
-		content, _ := tools.ReadFile(file)
-		yaml.Unmarshal([]byte(content), conf)
-	} else {
-
-		if tools.IsRustP() {
-			conf.DirFilter = []string{".git", ".github", "target", ".DS_Store", "tmp", ".bak", ".chk"}
-			conf.Ext = []string{"rs"}
-			conf.Lang = "rust"
-			conf.Frequency = 3
-			conf.EnableRun = true
-		} else {
-			conf.DirFilter = []string{".git", ".github", "vendor", ".DS_Store", "tmp", ".bak", ".chk"}
-			conf.Ext = []string{"go"}
-			conf.Lang = "go"
-			conf.Frequency = 3
-			conf.EnableRun = true
+		content, err := tools.ReadFile(file)
+		if err != nil {
+			logger.Log.Errorf("Failed to read config file: %s", err)
+			setDefaultConfig()
+			return
 		}
 
+		if err := yaml.Unmarshal([]byte(content), conf); err != nil {
+			logger.Log.Errorf("Failed to parse config file: %s", err)
+			setDefaultConfig()
+			return
+		}
+
+		// Validate and fix configuration
+		validateConfig()
+	} else {
+		setDefaultConfig()
+	}
+
+	// Initialize build cache
+	buildCache = cache.NewBuildCache(rootPath)
+}
+
+func setDefaultConfig() {
+	if tools.IsRustP() {
+		conf.DirFilter = []string{".git", ".github", "target", ".DS_Store", "tmp", ".bak", ".chk"}
+		conf.Ext = []string{"rs"}
+		conf.Lang = "rust"
+		conf.Frequency = 3
+		conf.EnableRun = true
+	} else {
+		conf.DirFilter = []string{".git", ".github", "vendor", ".DS_Store", "tmp", ".bak", ".chk"}
+		conf.Ext = []string{"go"}
+		conf.Lang = "go"
+		conf.Frequency = 3
+		conf.EnableRun = true
 	}
 }
 
-// Kill kills the running command process
-func Kill() {
-	defer func() {
-		if e := recover(); e != nil {
-			logger.Log.Infof("Kill recover: %s", e)
-		}
-	}()
-	if cmd != nil && cmd.Process != nil {
-		// Windows does not support Interrupt
-		if runtime.GOOS == "windows" {
-			cmd.Process.Signal(os.Kill)
-		} else {
-			cmd.Process.Signal(os.Interrupt)
-		}
-		ch := make(chan struct{}, 1)
-		go func() {
-			cmd.Wait()
-			ch <- struct{}{}
-		}()
+func validateConfig() {
+	// Ensure frequency is reasonable
+	if conf.Frequency < 1 {
+		logger.Log.Warn("Frequency too low, setting to 1 second")
+		conf.Frequency = 1
+	} else if conf.Frequency > 60 {
+		logger.Log.Warn("Frequency too high, setting to 60 seconds")
+		conf.Frequency = 60
+	}
 
-		select {
-		case <-ch:
-			return
-		case <-time.After(10 * time.Second):
-			logger.Log.Info("Timeout. Force kill cmd process")
-			err := cmd.Process.Kill()
-			if err != nil {
-				logger.Log.Errorf("Error while killing cmd process: %s", err)
-			}
-			return
+	// Ensure we have file extensions to watch
+	if len(conf.Ext) == 0 {
+		logger.Log.Warn("No file extensions specified, using defaults")
+		if conf.Lang == "rust" {
+			conf.Ext = []string{"rs"}
+		} else {
+			conf.Ext = []string{"go"}
 		}
 	}
+
+	// Ensure language is set
+	if conf.Lang == "" {
+		if tools.IsRustP() {
+			conf.Lang = "rust"
+		} else {
+			conf.Lang = "go"
+		}
+		logger.Log.Infof("Language auto-detected: %s", conf.Lang)
+	}
+}
+
+// reloadConfig reloads configuration from file if it has changed
+func reloadConfig() {
+	rootPath, _ := os.Getwd()
+	file := rootPath + "/" + Zfile
+	if runtime.GOOS == "windows" {
+		file = rootPath + "/" + ZfileWindow
+	}
+
+	if !tools.IsExist(file) {
+		return
+	}
+
+	// Check if config file has changed
+	if !hasFileChanged(file) {
+		return
+	}
+
+	logger.Log.Info("Configuration file changed, reloading...")
+
+	content, err := tools.ReadFile(file)
+	if err != nil {
+		logger.Log.Errorf("Failed to read config file: %s", err)
+		return
+	}
+
+	newConf := new(ZZZ)
+	if err := yaml.Unmarshal([]byte(content), newConf); err != nil {
+		logger.Log.Errorf("Failed to parse config file: %s", err)
+		return
+	}
+
+	// Update configuration
+	runMutex.Lock()
+	oldFreq := conf.Frequency
+	conf = newConf
+	validateConfig()
+	runMutex.Unlock()
+
+	logger.Log.Success("Configuration reloaded successfully")
+
+	// Log significant changes
+	if oldFreq != conf.Frequency {
+		logger.Log.Infof("Frequency changed from %d to %d seconds", oldFreq, conf.Frequency)
+	}
+}
+
+// Kill kills the running command process with improved error handling
+func Kill() {
+	runMutex.Lock()
+	defer runMutex.Unlock()
+
+	defer func() {
+		if e := recover(); e != nil {
+			logger.Log.Warnf("Kill recover: %s", e)
+		}
+	}()
+
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+
+	pid := cmd.Process.Pid
+	logger.Log.Infof("Terminating process (PID: %d)...", pid)
+
+	// Try graceful shutdown first
+	var sig os.Signal = os.Interrupt
+	if runtime.GOOS == "windows" {
+		sig = os.Kill // Windows doesn't support SIGINT properly
+	}
+
+	if err := cmd.Process.Signal(sig); err != nil {
+		logger.Log.Warnf("Failed to send signal to process: %s", err)
+		return
+	}
+
+	// Wait for graceful shutdown with timeout
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			logger.Log.Infof("Process terminated with error: %s", err)
+		} else {
+			logger.Log.Info("Process terminated gracefully")
+		}
+	case <-time.After(5 * time.Second):
+		logger.Log.Warn("Graceful shutdown timeout, force killing...")
+		if err := cmd.Process.Kill(); err != nil {
+			logger.Log.Errorf("Failed to force kill process: %s", err)
+		} else {
+			logger.Log.Info("Process force killed")
+		}
+		// Wait a bit more for the force kill to complete
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			logger.Log.Error("Process may still be running after force kill")
+		}
+	}
+
+	cmd = nil
 }
 
 func isFilterFile(name string) bool {
@@ -127,6 +245,37 @@ func isFilterFile(name string) bool {
 	return true
 }
 
+// hasFileChanged checks if a file has actually changed using cached file info
+func hasFileChanged(filename string) bool {
+	fi, err := os.Stat(filename)
+	if err != nil {
+		return false // File doesn't exist or can't be accessed
+	}
+
+	cacheMutex.RLock()
+	cachedInfo, exists := fileCache[filename]
+	cacheMutex.RUnlock()
+
+	if !exists {
+		// First time seeing this file
+		cacheMutex.Lock()
+		fileCache[filename] = fi
+		cacheMutex.Unlock()
+		return true
+	}
+
+	// Check if modification time or size changed
+	changed := fi.ModTime() != cachedInfo.ModTime() || fi.Size() != cachedInfo.Size()
+
+	if changed {
+		cacheMutex.Lock()
+		fileCache[filename] = fi
+		cacheMutex.Unlock()
+	}
+
+	return changed
+}
+
 func GetBashFileSuffix() string {
 	if runtime.GOOS == "windows" {
 		return "bat"
@@ -134,96 +283,73 @@ func GetBashFileSuffix() string {
 	return "sh"
 }
 
-func CmdRunBefore(rootPath string) {
-
-	logger.Log.Infof("App run before hook start")
-
-	for _, sh := range conf.Action.Before {
-
-		fileSuffix := GetBashFileSuffix()
-		tmpFile := rootPath + "/." + tools.Md5(sh) + "." + fileSuffix
-		werr := tools.WriteFile(tmpFile, sh)
-		if werr != nil {
-			logger.Log.Errorf("Write before hook script error: %s", werr)
-		}
-
-		cmd := exec.Command("sh", []string{"-c", tmpFile}...)
-		if runtime.GOOS == "windows" {
-			cmd = exec.Command("cmd", "/C", tmpFile)
-		}
-
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-
-		err := cmd.Run()
-		if err != nil {
-			logger.Log.Errorf("Run Before hook error: %s", err)
-		}
-
-		if tools.IsExist(tmpFile) {
-			os.Remove(tmpFile)
-		}
-
+// executeHooks executes a list of shell commands with proper error handling
+func executeHooks(hookType string, scripts []string, rootPath string) {
+	if len(scripts) == 0 {
+		return
 	}
-	logger.Log.Infof("App run before hook end")
 
+	logger.Log.Infof("Executing %s hooks...", hookType)
+	start := time.Now()
+
+	for i, script := range scripts {
+		if strings.TrimSpace(script) == "" {
+			continue
+		}
+
+		logger.Log.Infof("Running %s hook %d/%d", hookType, i+1, len(scripts))
+
+		if err := executeScript(script, rootPath); err != nil {
+			logger.Log.Errorf("%s hook %d failed: %s", hookType, i+1, err)
+			// Continue with other hooks even if one fails
+		} else {
+			logger.Log.Infof("%s hook %d completed successfully", hookType, i+1)
+		}
+	}
+
+	duration := time.Since(start)
+	logger.Log.Infof("%s hooks completed in %v", hookType, duration)
+}
+
+// executeScript executes a single script with improved error handling
+func executeScript(script, rootPath string) error {
+	// Use direct command execution for simple commands
+	if !strings.Contains(script, ";") && !strings.Contains(script, "&&") && !strings.Contains(script, "||") {
+		args := strings.Fields(script)
+		if len(args) > 0 {
+			cmd := exec.Command(args[0], args[1:]...)
+			cmd.Dir = rootPath
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			return cmd.Run()
+		}
+	}
+
+	// For complex scripts, use shell execution
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("cmd", "/C", script)
+	} else {
+		cmd = exec.Command("sh", "-c", script)
+	}
+
+	cmd.Dir = rootPath
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	return cmd.Run()
+}
+
+func CmdRunBefore(rootPath string) {
+	executeHooks("before", conf.Action.Before, rootPath)
 }
 
 func CmdRunAfter(rootPath string) {
-	logger.Log.Infof("App Run After Hook Start")
-	for _, sh := range conf.Action.After {
-
-		fileSuffix := GetBashFileSuffix()
-		tmpFile := rootPath + "/." + tools.Md5(sh) + "." + fileSuffix
-		werr := tools.WriteFile(tmpFile, sh)
-		if werr != nil {
-			logger.Log.Errorf("Write After hook script error: %s", werr)
-		}
-		cmd := exec.Command("sh", []string{"-c", tmpFile}...)
-		if runtime.GOOS == "windows" {
-			cmd = exec.Command("cmd", "/C", tmpFile)
-		}
-
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-
-		err := cmd.Run()
-		if err != nil {
-			logger.Log.Errorf("Run after hook error:%v", err)
-		}
-		if tools.IsExist(tmpFile) {
-			os.Remove(tmpFile)
-		}
-	}
-	logger.Log.Infof("App Run After Hook End")
+	executeHooks("after", conf.Action.After, rootPath)
 }
 
 func CmdRunExit(rootPath string) {
-	logger.Log.Infof("App Run Exit Hook Start")
-	for _, sh := range conf.Action.Exit {
-		fileSuffix := GetBashFileSuffix()
-		tmpFile := rootPath + "/." + tools.Md5(sh) + "." + fileSuffix
-		werr := tools.WriteFile(tmpFile, sh)
-		if werr != nil {
-			logger.Log.Errorf("Write Exit hook script error: %s", werr)
-		}
-		cmd := exec.Command("sh", []string{"-c", tmpFile}...)
-		if runtime.GOOS == "windows" {
-			cmd = exec.Command("cmd", "/C", tmpFile)
-		}
-
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-
-		err := cmd.Run()
-		if err != nil {
-			logger.Log.Errorf("Run after exit error:%v", err)
-		}
-		if tools.IsExist(tmpFile) {
-			os.Remove(tmpFile)
-		}
-	}
-	logger.Log.Infof("App Run Exit Hook End")
+	executeHooks("exit", conf.Action.Exit, rootPath)
 }
 
 func execCmd(shell string, raw []string) (int, error) {
@@ -253,47 +379,74 @@ func execCmd(shell string, raw []string) (int, error) {
 }
 
 func CmdAutoBuild(rootPath string) {
+	runMutex.Lock()
+	if isBuilding {
+		runMutex.Unlock()
+		logger.Log.Info("Build already in progress, skipping...")
+		return
+	}
+	isBuilding = true
+	runMutex.Unlock()
+
+	defer func() {
+		runMutex.Lock()
+		isBuilding = false
+		runMutex.Unlock()
+	}()
+
+	// Check if rebuild is necessary using smart cache
+	if !buildCache.ShouldRebuild(rootPath, "go", conf.Ext) {
+		logger.Log.Info("No changes detected, skipping build")
+		return
+	}
+
+	// Start performance monitoring
+	stats := monitor.StartBuild()
+	defer stats.EndBuild()
+
 	var (
 		err    error
 		stderr bytes.Buffer
 	)
-	cmdName := "go"
 
-	//for install
-	icmd := exec.Command(cmdName, "install", "-v")
-	icmd.Stdout = os.Stdout
-	icmd.Stderr = os.Stderr
-	icmd.Env = append(os.Environ(), "GOGC=off")
-	icmd.Run()
+	logger.Log.Info("Starting Go build process...")
+	logger.Log.Infof("System info: %s", monitor.GetSystemInfo())
 
-	os.Chdir(rootPath)
+	// Change to project directory
+	if err := os.Chdir(rootPath); err != nil {
+		logger.Log.Errorf("Failed to change directory to %s: %s", rootPath, err)
+		return
+	}
+
 	rootPath = filepath.ToSlash(rootPath)
 	appName := path.Base(rootPath)
-
 	if runtime.GOOS == "windows" {
 		appName += ".exe"
 	}
-	//build
-	args := []string{"build"}
-	args = append(args, "-o", appName)
 
+	// Build arguments
+	args := []string{"build", "-o", appName}
 	buildLDFlags = strings.TrimSpace(buildLDFlags)
 	if buildLDFlags != "" {
 		args = append(args, "-ldflags", buildLDFlags)
 	}
 
-	// fmt.Println(cmdName, args)
-	cmd := exec.Command(cmdName, args...)
-	cmd.Env = append(os.Environ(), "GOGC=off")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = &stderr
-	err = cmd.Run()
+	// Execute build command
+	buildCmd := exec.Command("go", args...)
+	buildCmd.Env = append(os.Environ(), "GOGC=off")
+	buildCmd.Stdout = os.Stdout
+	buildCmd.Stderr = &stderr
+
+	err = buildCmd.Run()
 	if err != nil {
-		logger.Log.Errorf("Failed to build the application: %s", stderr.String())
+		logger.Log.Errorf("Build failed: %s", stderr.String())
 		return
 	}
 
-	logger.Log.Success("Built Successfully!")
+	// Mark build as complete in cache
+	buildCache.MarkBuildComplete("go")
+
+	logger.Log.Success("Go build completed successfully")
 	CmdRestart(rootPath)
 }
 
@@ -303,26 +456,55 @@ func CmdRestart(rootPath string) {
 }
 
 func CmdStart(rootPath string) {
+	runMutex.Lock()
+	defer runMutex.Unlock()
 
-	os.Chdir(rootPath)
+	if err := os.Chdir(rootPath); err != nil {
+		logger.Log.Errorf("Failed to change directory to %s: %s", rootPath, err)
+		return
+	}
+
 	appName := path.Base(rootPath)
-	logger.Log.Infof("Restarting '%s'...", appName)
+	if runtime.GOOS == "windows" {
+		appName += ".exe"
+	}
 
-	//start
+	logger.Log.Infof("Starting '%s'...", appName)
+
+	// Ensure executable path is correct
 	if !strings.Contains(appName, "./") {
 		appName = "./" + appName
 	}
-	// fmt.Println(appName)
+
+	// Check if executable exists
+	if !tools.IsFile(appName) {
+		logger.Log.Errorf("Executable not found: %s", appName)
+		return
+	}
 
 	cmd = exec.Command(appName)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	go cmd.Run()
+	// Start the process in a goroutine
+	go func() {
+		if err := cmd.Run(); err != nil {
+			logger.Log.Errorf("Application exited with error: %s", err)
+		} else {
+			logger.Log.Info("Application exited normally")
+		}
+	}()
+
+	// Give the process a moment to start
+	time.Sleep(100 * time.Millisecond)
 
 	logger.Log.Successf("'%s' is running...", appName)
 
-	started <- true
+	// Non-blocking send to started channel
+	select {
+	case started <- true:
+	default:
+	}
 }
 
 func CmdDone(rootPath string) {
@@ -353,72 +535,116 @@ func initWatcher(rootPath string) {
 	if err != nil {
 		logger.Log.Fatalf("Failed to create watcher: %s", err)
 	}
-	// defer watcher.Close()
-	doneRun := make(chan int64)
+
+	logger.Log.Info("Initializing file watcher...")
+
+	// Channel for debounced file changes
+	fileChanges := make(chan string, 100)
+	buildTrigger := make(chan bool, 1)
+
+	// File event processor with debouncing
+	go func() {
+		changedFiles := make(map[string]time.Time)
+		ticker := time.NewTicker(time.Duration(conf.Frequency) * time.Second)
+		defer ticker.Stop()
+
+		// Config reload ticker (check every 5 seconds)
+		configTicker := time.NewTicker(5 * time.Second)
+		defer configTicker.Stop()
+
+		for {
+			select {
+			case filename := <-fileChanges:
+				changedFiles[filename] = time.Now()
+
+			case <-ticker.C:
+				if len(changedFiles) > 0 {
+					// Clear the map and trigger build
+					fileCount := len(changedFiles)
+					changedFiles = make(map[string]time.Time)
+
+					logger.Log.Infof("Detected changes in %d file(s), triggering rebuild...", fileCount)
+
+					// Non-blocking send to build trigger
+					select {
+					case buildTrigger <- true:
+					default:
+						// Build already queued
+					}
+				}
+
+				// Update ticker frequency if config changed
+				runMutex.RLock()
+				currentFreq := conf.Frequency
+				runMutex.RUnlock()
+
+				if ticker.C != nil {
+					ticker.Stop()
+					ticker = time.NewTicker(time.Duration(currentFreq) * time.Second)
+				}
+
+			case <-configTicker.C:
+				// Check for config file changes
+				reloadConfig()
+			}
+		}
+	}()
+
+	// Build processor
+	go func() {
+		for range buildTrigger {
+			CmdDone(rootPath)
+		}
+	}()
+
+	// File system event processor
 	go func() {
 		for {
 			select {
-			case e := <-watcher.Events:
-				if isFilterFile(e.Name) {
+			case event := <-watcher.Events:
+				// Skip filtered files
+				if isFilterFile(event.Name) {
 					continue
 				}
 
-				isBuild := true
-				mt := tools.GetFileModTime(e.Name)
-				if t := eventTime[e.Name]; mt == t {
-					logger.Log.Hintf(colors.Bold("Skipping: ")+"%s", e.String())
-					isBuild = false
+				// Only process write and create events
+				if event.Op&fsnotify.Write == fsnotify.Write || event.Op&fsnotify.Create == fsnotify.Create {
+					// Use improved file change detection
+					if hasFileChanged(event.Name) {
+						logger.Log.Hintf(colors.Bold("Changed: ")+"%s", event.Name)
+
+						// Send to debouncer
+						select {
+						case fileChanges <- event.Name:
+						default:
+							// Channel full, skip this event
+							logger.Log.Hintf(colors.Bold("Queue full, skipping: ")+"%s", event.Name)
+						}
+					} else {
+						logger.Log.Hintf(colors.Bold("Skipping: ")+"%s (no change)", event.Name)
+					}
 				}
 
-				eventTime[e.Name] = mt
-
-				if isBuild {
-					doneRun <- mt
-				}
 			case err := <-watcher.Errors:
-				logger.Log.Warnf("Watcher error: %s", err.Error()) // No need to exit here
+				logger.Log.Warnf("Watcher error: %s", err)
 			}
 		}
 	}()
 
-	var changeTime int64
-	c := cron.New()
-
-	go func() {
-		for {
-			changeTime = <-doneRun
-			c.Start()
-		}
-	}()
-
-	cronSpec := fmt.Sprintf("@every %ds", conf.Frequency)
-	c.AddFunc(cronSpec, func() {
-		if changeTime > 0 {
-
-			if changeTime+conf.Frequency < time.Now().Unix() {
-				rootPath, _ := os.Getwd()
-				logger.Log.Success("Reconstruction in progress, please wait...")
-				go CmdDone(rootPath)
-				c.Stop()
-			}
-		}
-	})
-	c.Start()
-
-	logger.Log.Info("Initializing watcher...")
+	// Add directories to watcher
 	dirs := tools.GetPathDir(rootPath, conf.DirFilter)
 	dirs = tools.GetVailDir(dirs, conf.Ext)
-	for _, d := range dirs {
-		// fmt.Println("xxx:",d)
-		err = watcher.Add(d)
-		logger.Log.Hintf(colors.Bold("Watching: ")+"%s", d)
-		if err != nil {
-			logger.Log.Info("It may be that the open file limit setting is too small, ulimit -n 2048.")
-			logger.Log.Fatalf("Failed to watch directory: %s", err)
 
+	for _, dir := range dirs {
+		if err := watcher.Add(dir); err != nil {
+			logger.Log.Warnf("Failed to watch directory %s: %s", dir, err)
+			logger.Log.Info("Tip: If you see 'too many open files', try: ulimit -n 2048")
+		} else {
+			logger.Log.Hintf(colors.Bold("Watching: ")+"%s", dir)
 		}
 	}
-	// <-done
+
+	logger.Log.Successf("File watcher initialized, monitoring %d directories", len(dirs))
 }
 
 func CmdRun(c *cli.Context) error {

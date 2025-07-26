@@ -7,28 +7,60 @@ import (
 	"strings"
 
 	"github.com/midoks/zzz/internal/logger"
+	"github.com/midoks/zzz/internal/monitor"
 )
 
 func CmdAutoBuildRust(rootPath string) {
-	var (
-		err error
-	)
+	runMutex.Lock()
+	if isBuilding {
+		runMutex.Unlock()
+		logger.Log.Info("Rust build already in progress, skipping...")
+		return
+	}
+	isBuilding = true
+	runMutex.Unlock()
 
-	os.Chdir(rootPath)
+	defer func() {
+		runMutex.Lock()
+		isBuilding = false
+		runMutex.Unlock()
+	}()
 
-	logger.Log.Infof("%s...", "cargo build --release")
-	cmd := exec.Command("cargo", "build", "--release")
-	cmd.Env = append(os.Environ())
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stdout
-
-	err = cmd.Run()
-	if err != nil {
-		logger.Log.Error("Failed to build!!")
+	// Check if rebuild is necessary using smart cache
+	if !buildCache.ShouldRebuild(rootPath, "rust", conf.Ext) {
+		logger.Log.Info("No changes detected, skipping build")
 		return
 	}
 
-	logger.Log.Success("Built Successfully!")
+	// Start performance monitoring
+	stats := monitor.StartBuild()
+	defer stats.EndBuild()
+
+	logger.Log.Info("Starting Rust build process...")
+	logger.Log.Infof("System info: %s", monitor.GetSystemInfo())
+
+	// Change to project directory
+	if err := os.Chdir(rootPath); err != nil {
+		logger.Log.Errorf("Failed to change directory to %s: %s", rootPath, err)
+		return
+	}
+
+	// Execute cargo build
+	buildCmd := exec.Command("cargo", "build", "--release")
+	buildCmd.Env = append(os.Environ())
+	buildCmd.Stdout = os.Stdout
+	buildCmd.Stderr = os.Stderr
+
+	if err := buildCmd.Run(); err != nil {
+		logger.Log.Errorf("Rust build failed: %s", err)
+		return
+	}
+
+	// Mark build as complete in cache
+	buildCache.MarkBuildComplete("rust")
+
+	logger.Log.Success("Rust build completed successfully")
+
 	Kill()
 	CmdStartRust(rootPath)
 }
