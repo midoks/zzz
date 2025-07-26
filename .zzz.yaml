@@ -1,5 +1,6 @@
 title: zzz
-frequency: 3
+dev: true
+frequency: 2
 lang: "go"
 dirfilter:
 - tmp
@@ -14,7 +15,7 @@ action:
   before:
   - echo "before"
   - gofmt -w ./
-  # - find . -name ".DS_Store" -print -delete
+  - find . -name ".DS_Store" -print -delete
   after:
   - zzz -v
   exit:

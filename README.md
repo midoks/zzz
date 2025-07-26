@@ -20,6 +20,15 @@
 go install github.com/midoks/zzz@latest
 ```
 
+### 命令功能
+
+- **`zzz status`**: 系统状态和统计信息显示
+- **`zzz optimize`**: 性能优化工具和控制面板
+  - `--status`: 显示优化状态
+  - `--force-gc`: 强制垃圾回收
+  - `--clear-cache`: 清理所有缓存
+  - `--tune`: 环境调优（development/production）
+
 ### 直接运行
 
 ```bash

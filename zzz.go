@@ -4,9 +4,10 @@ import (
 	"log"
 	"os"
 
+	"github.com/urfave/cli"
+
 	"github.com/midoks/zzz/internal/cmd"
 	"github.com/midoks/zzz/internal/conf"
-	"github.com/urfave/cli"
 )
 
 const (
@@ -29,6 +30,8 @@ func main() {
 		cmd.Run,
 		cmd.New,
 		cmd.Version,
+		cmd.Status,
+		cmd.Optimize,
 	}
 
 	if err := app.Run(os.Args); err != nil {

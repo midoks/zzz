@@ -21,9 +21,11 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/midoks/zzz/internal/cache"
+	"github.com/midoks/zzz/internal/hotreload"
 	"github.com/midoks/zzz/internal/logger"
 	"github.com/midoks/zzz/internal/logger/colors"
 	"github.com/midoks/zzz/internal/monitor"
+	"github.com/midoks/zzz/internal/optimizer"
 	"github.com/midoks/zzz/internal/tools"
 )
 
@@ -38,17 +40,32 @@ var Run = cli.Command{
 }
 
 var (
-	runMutex     sync.RWMutex
-	conf         *ZZZ
-	cmd          *exec.Cmd
-	buildLDFlags string
-	eventTime    = make(map[string]int64)
-	started      = make(chan bool, 1)
-	isBuilding   = false
-	fileCache    = make(map[string]os.FileInfo)
-	cacheMutex   sync.RWMutex
-	buildCache   *cache.BuildCache
+	runMutex       sync.RWMutex
+	conf           *ZZZ
+	cmd            *exec.Cmd
+	buildLDFlags   string
+	eventTime      = make(map[string]int64)
+	started        = make(chan bool, 1)
+	isBuilding     = false
+	fileCache      = make(map[string]fileCacheEntry)
+	cacheMutex     sync.RWMutex
+	buildCache     *cache.BuildCache
+	perfOptimizer  *optimizer.Optimizer
+	configReloader *hotreload.ConfigReloader
+	// Performance optimization: reduce memory allocations
+	stringPool = sync.Pool{
+		New: func() interface{} {
+			return make([]string, 0, 10)
+		},
+	}
 )
+
+// Optimized file cache entry
+type fileCacheEntry struct {
+	modTime  time.Time
+	size     int64
+	cachedAt time.Time
+}
 
 func init() {
 	rootPath, _ := os.Getwd()
@@ -80,6 +97,28 @@ func init() {
 
 	// Initialize build cache
 	buildCache = cache.NewBuildCache(rootPath)
+
+	// Initialize performance optimizer
+	optConfig := optimizer.DefaultConfig()
+	perfOptimizer = optimizer.NewOptimizer(optConfig)
+
+	if conf.Dev {
+		perfOptimizer.TuneForDevelopment()
+	} else {
+		perfOptimizer.TuneForProduction()
+	}
+	perfOptimizer.Start()
+
+	// Initialize configuration hot reload
+	var err error
+	configReloader, err = hotreload.NewConfigReloader(file)
+	if err != nil {
+		logger.Log.Warnf("Failed to initialize config hot reload: %s", err)
+	} else {
+		// Add callback for configuration changes
+		configReloader.AddCallback(onConfigReload)
+		configReloader.Start()
+	}
 }
 
 func setDefaultConfig() {
@@ -88,12 +127,14 @@ func setDefaultConfig() {
 		conf.Ext = []string{"rs"}
 		conf.Lang = "rust"
 		conf.Frequency = 3
+		conf.Dev = false
 		conf.EnableRun = true
 	} else {
 		conf.DirFilter = []string{".git", ".github", "vendor", ".DS_Store", "tmp", ".bak", ".chk"}
 		conf.Ext = []string{"go"}
 		conf.Lang = "go"
 		conf.Frequency = 3
+		conf.Dev = false
 		conf.EnableRun = true
 	}
 }
@@ -129,7 +170,46 @@ func validateConfig() {
 	}
 }
 
-// reloadConfig reloads configuration from file if it has changed
+// onConfigReload handles configuration hot reload callback
+func onConfigReload(newConfigData interface{}) error {
+	// Convert interface{} to map for processing
+	configMap, ok := newConfigData.(map[interface{}]interface{})
+	if !ok {
+		return fmt.Errorf("invalid configuration format")
+	}
+
+	// Convert to proper format and unmarshal
+	configBytes, err := yaml.Marshal(configMap)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %s", err)
+	}
+
+	newConf := new(ZZZ)
+	if err := yaml.Unmarshal(configBytes, newConf); err != nil {
+		return fmt.Errorf("failed to parse config: %s", err)
+	}
+
+	// Update configuration atomically
+	runMutex.Lock()
+	oldFreq := conf.Frequency
+	oldLang := conf.Lang
+	conf = newConf
+	validateConfig()
+	runMutex.Unlock()
+
+	// Log significant changes
+	if oldFreq != conf.Frequency {
+		logger.Log.Infof("Frequency changed from %d to %d seconds", oldFreq, conf.Frequency)
+	}
+	if oldLang != conf.Lang {
+		logger.Log.Infof("Language changed from %s to %s", oldLang, conf.Lang)
+	}
+
+	logger.Log.Success("Configuration hot reloaded successfully")
+	return nil
+}
+
+// reloadConfig reloads configuration from file if it has changed (legacy function)
 func reloadConfig() {
 	rootPath, _ := os.Getwd()
 	file := rootPath + "/" + Zfile
@@ -245,7 +325,7 @@ func isFilterFile(name string) bool {
 	return true
 }
 
-// hasFileChanged checks if a file has actually changed using cached file info
+// hasFileChanged checks if a file has actually changed using optimized cached file info
 func hasFileChanged(filename string) bool {
 	fi, err := os.Stat(filename)
 	if err != nil {
@@ -253,23 +333,37 @@ func hasFileChanged(filename string) bool {
 	}
 
 	cacheMutex.RLock()
-	cachedInfo, exists := fileCache[filename]
+	cachedEntry, exists := fileCache[filename]
 	cacheMutex.RUnlock()
+
+	// Check cache validity (cache expires after 500ms for better performance)
+	if exists && time.Since(cachedEntry.cachedAt) < 500*time.Millisecond {
+		// Use cached result if very recent
+		return fi.ModTime() != cachedEntry.modTime || fi.Size() != cachedEntry.size
+	}
 
 	if !exists {
 		// First time seeing this file
 		cacheMutex.Lock()
-		fileCache[filename] = fi
+		fileCache[filename] = fileCacheEntry{
+			modTime:  fi.ModTime(),
+			size:     fi.Size(),
+			cachedAt: time.Now(),
+		}
 		cacheMutex.Unlock()
 		return true
 	}
 
 	// Check if modification time or size changed
-	changed := fi.ModTime() != cachedInfo.ModTime() || fi.Size() != cachedInfo.Size()
+	changed := fi.ModTime() != cachedEntry.modTime || fi.Size() != cachedEntry.size
 
 	if changed {
 		cacheMutex.Lock()
-		fileCache[filename] = fi
+		fileCache[filename] = fileCacheEntry{
+			modTime:  fi.ModTime(),
+			size:     fi.Size(),
+			cachedAt: time.Now(),
+		}
 		cacheMutex.Unlock()
 	}
 

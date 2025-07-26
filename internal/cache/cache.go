@@ -3,6 +3,7 @@ package cache
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"hash"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,7 +17,9 @@ import (
 type BuildCache struct {
 	cacheDir   string
 	lastHashes map[string]string
+	fileHashes map[string]string // Cache individual file hashes
 	mutex      sync.RWMutex
+	hasherPool sync.Pool // Reuse hash objects
 }
 
 // NewBuildCache creates a new build cache instance
@@ -24,15 +27,36 @@ func NewBuildCache(projectRoot string) *BuildCache {
 	cacheDir := filepath.Join(projectRoot, ".zzz-cache")
 	os.MkdirAll(cacheDir, 0755)
 
-	return &BuildCache{
+	bc := &BuildCache{
 		cacheDir:   cacheDir,
 		lastHashes: make(map[string]string),
+		fileHashes: make(map[string]string),
 	}
+
+	// Initialize hasher pool for better performance
+	bc.hasherPool = sync.Pool{
+		New: func() interface{} {
+			return sha256.New()
+		},
+	}
+
+	return bc
 }
 
-// calculateProjectHash calculates a hash of all relevant source files
+// calculateProjectHash calculates a hash of all relevant source files with optimization
 func (bc *BuildCache) calculateProjectHash(projectRoot string, extensions []string) (string, error) {
-	hasher := sha256.New()
+	// Get hasher from pool for better performance
+	hasher := bc.hasherPool.Get().(hash.Hash)
+	defer func() {
+		hasher.Reset()
+		bc.hasherPool.Put(hasher)
+	}()
+
+	// Create extension map for faster lookup
+	extMap := make(map[string]bool, len(extensions))
+	for _, ext := range extensions {
+		extMap[ext] = true
+	}
 
 	err := filepath.Walk(projectRoot, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -48,16 +72,27 @@ func (bc *BuildCache) calculateProjectHash(projectRoot string, extensions []stri
 			return nil
 		}
 
-		// Only hash files with relevant extensions
+		// Only hash files with relevant extensions (optimized lookup)
 		ext := strings.TrimPrefix(filepath.Ext(path), ".")
-		for _, validExt := range extensions {
-			if ext == validExt {
-				// Add file path and modification time to hash
-				relPath, _ := filepath.Rel(projectRoot, path)
-				hasher.Write([]byte(relPath))
-				hasher.Write([]byte(info.ModTime().Format(time.RFC3339Nano)))
-				break
+		if extMap[ext] {
+			// Check individual file hash cache first
+			relPath, _ := filepath.Rel(projectRoot, path)
+			fileKey := relPath + ":" + info.ModTime().Format(time.RFC3339Nano)
+
+			if cachedHash, exists := bc.fileHashes[relPath]; exists {
+				// Use cached hash if file hasn't changed
+				if strings.HasSuffix(cachedHash, info.ModTime().Format(time.RFC3339Nano)) {
+					hasher.Write([]byte(cachedHash))
+					return nil
+				}
 			}
+
+			// Calculate new hash for this file
+			hasher.Write([]byte(relPath))
+			hasher.Write([]byte(info.ModTime().Format(time.RFC3339Nano)))
+
+			// Cache the file hash
+			bc.fileHashes[relPath] = fileKey
 		}
 
 		return nil

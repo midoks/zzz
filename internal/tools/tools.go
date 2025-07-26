@@ -4,46 +4,103 @@ import (
 	"crypto/md5"
 	"fmt"
 	"os"
+	"os/exec"
 	"path"
 	"strings"
+	"sync"
 	"time"
 )
 
 func IsGoP() bool {
-	if IsExist("go.mod") {
-		return true
-	}
-	return false
+	return IsExist("go.mod")
 }
 
 func IsRustP() bool {
-	if IsExist("Cargo.toml") {
-		return true
-	}
-	return false
+	return IsExist("Cargo.toml")
 }
 
+// Cache for frequently used arrays to improve lookup performance
+var (
+	arrayCache      = make(map[string]map[string]bool)
+	arrayCacheMutex sync.RWMutex
+)
+
+// InArray checks if a string exists in an array with optimized lookup
 func InArray(in string, arr []string) bool {
-	for _, a := range arr {
-		if strings.EqualFold(in, a) {
-			return true
+	// For small arrays, direct iteration is faster
+	if len(arr) <= 5 {
+		for _, a := range arr {
+			if strings.EqualFold(in, a) {
+				return true
+			}
 		}
+		return false
 	}
-	return false
+
+	// For larger arrays, use cached map for better performance
+	cacheKey := strings.Join(arr, "|")
+	arrayCacheMutex.RLock()
+	lookupMap, exists := arrayCache[cacheKey]
+	arrayCacheMutex.RUnlock()
+
+	if !exists {
+		// Create lookup map
+		lookupMap = make(map[string]bool, len(arr))
+		for _, a := range arr {
+			lookupMap[strings.ToLower(a)] = true
+		}
+
+		// Cache it
+		arrayCacheMutex.Lock()
+		arrayCache[cacheKey] = lookupMap
+		arrayCacheMutex.Unlock()
+	}
+
+	return lookupMap[strings.ToLower(in)]
 }
 
-// GetFileModTime returns unix timestamp of `os.File.ModTime` for the given path.
+// File info cache for better performance
+var (
+	fileInfoCache      = make(map[string]fileInfoCacheEntry)
+	fileInfoCacheMutex sync.RWMutex
+)
+
+type fileInfoCacheEntry struct {
+	modTime  int64
+	cachedAt time.Time
+}
+
+// GetFileModTime returns unix timestamp of `os.File.ModTime` for the given path with caching
 func GetFileModTime(path string) int64 {
 	path = strings.Replace(path, "\\", "/", -1)
 
-	// Use os.Stat directly instead of opening the file
+	// Check cache first (valid for 1 second)
+	fileInfoCacheMutex.RLock()
+	if entry, exists := fileInfoCache[path]; exists {
+		if time.Since(entry.cachedAt) < time.Second {
+			fileInfoCacheMutex.RUnlock()
+			return entry.modTime
+		}
+	}
+	fileInfoCacheMutex.RUnlock()
+
+	// Get fresh file info
 	fi, err := os.Stat(path)
 	if err != nil {
-		// return current time
 		return time.Now().Unix()
 	}
 
-	return fi.ModTime().Unix()
+	modTime := fi.ModTime().Unix()
+
+	// Update cache
+	fileInfoCacheMutex.Lock()
+	fileInfoCache[path] = fileInfoCacheEntry{
+		modTime:  modTime,
+		cachedAt: time.Now(),
+	}
+	fileInfoCacheMutex.Unlock()
+
+	return modTime
 }
 
 func GetPathDir(path string, contain []string) []string {
@@ -132,4 +189,16 @@ func Md5Byte(buf []byte) string {
 
 func Md5(s string) string {
 	return Md5Byte([]byte(s))
+}
+
+// RunCommand executes a shell command and returns the output
+func RunCommand(command string, args ...string) (string, error) {
+	cmd := exec.Command(command, args...)
+	output, err := cmd.CombinedOutput()
+	return string(output), err
+}
+
+// GetFileInfo returns file information for the given path
+func GetFileInfo(path string) (os.FileInfo, error) {
+	return os.Stat(path)
 }

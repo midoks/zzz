@@ -22,6 +22,7 @@ var New = cli.Command{
 // Note: struct fields must be public in order for unmarshal to
 // correctly populate the data.
 type ZZZ struct {
+	Dev       bool
 	Title     string
 	Frequency int64
 	DirFilter []string
@@ -59,6 +60,7 @@ func CmdNew(c *cli.Context) error {
 			conf.Ext = append(conf.Ext, "rs")
 			conf.Frequency = 3
 			conf.EnableRun = true
+			conf.Dev = true
 
 			conf.DirFilter = append(conf.DirFilter, "tmp")
 			conf.DirFilter = append(conf.DirFilter, ".git")
@@ -80,6 +82,7 @@ func CmdNew(c *cli.Context) error {
 			conf.Ext = append(conf.Ext, "go")
 			conf.Frequency = 3
 			conf.EnableRun = true
+			conf.Dev = true
 
 			conf.DirFilter = append(conf.DirFilter, "tmp")
 			conf.DirFilter = append(conf.DirFilter, ".git")
