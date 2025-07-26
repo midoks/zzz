@@ -379,6 +379,11 @@ func execCmd(shell string, raw []string) (int, error) {
 }
 
 func CmdAutoBuild(rootPath string) {
+	var (
+		err    error
+		stderr bytes.Buffer
+	)
+
 	runMutex.Lock()
 	if isBuilding {
 		runMutex.Unlock()
@@ -394,6 +399,17 @@ func CmdAutoBuild(rootPath string) {
 		runMutex.Unlock()
 	}()
 
+	//for install
+	install_cmd := exec.Command("go", "install", "-v")
+	install_cmd.Stdout = os.Stdout
+	install_cmd.Stderr = os.Stderr
+	install_cmd.Env = append(os.Environ(), "GOGC=off")
+	err = install_cmd.Run()
+	if err != nil {
+		logger.Log.Errorf("Intall failed: %s", stderr.String())
+		return
+	}
+
 	// Check if rebuild is necessary using smart cache
 	if !buildCache.ShouldRebuild(rootPath, "go", conf.Ext) {
 		logger.Log.Info("No changes detected, skipping build")
@@ -403,11 +419,6 @@ func CmdAutoBuild(rootPath string) {
 	// Start performance monitoring
 	stats := monitor.StartBuild()
 	defer stats.EndBuild()
-
-	var (
-		err    error
-		stderr bytes.Buffer
-	)
 
 	logger.Log.Info("Starting Go build process...")
 	logger.Log.Infof("System info: %s", monitor.GetSystemInfo())
@@ -447,6 +458,7 @@ func CmdAutoBuild(rootPath string) {
 	buildCache.MarkBuildComplete("go")
 
 	logger.Log.Success("Go build completed successfully")
+
 	CmdRestart(rootPath)
 }
 
