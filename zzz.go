@@ -29,7 +29,6 @@ func main() {
 		cmd.Run,
 		cmd.New,
 		cmd.Version,
-		cmd.Status,
 	}
 
 	if err := app.Run(os.Args); err != nil {
