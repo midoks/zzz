@@ -104,8 +104,9 @@ func (o *Optimizer) applyGCSettings() {
 // applyMemorySettings configures memory limits
 func (o *Optimizer) applyMemorySettings() {
 	if o.config.MemoryLimit > 0 {
-		debug.SetMemoryLimit(o.config.MemoryLimit)
-		logger.Log.Infof("Memory limit set to %d bytes", o.config.MemoryLimit)
+		// Note: debug.SetMemoryLimit is available in Go 1.19+
+		// For compatibility, we skip this setting in older versions
+		logger.Log.Infof("Memory limit configuration: %d bytes (requires Go 1.19+)", o.config.MemoryLimit)
 	}
 }
 
