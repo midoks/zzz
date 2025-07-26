@@ -3,13 +3,10 @@ package tools
 import (
 	"crypto/md5"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path"
 	"strings"
 	"time"
-
-	"github.com/midoks/zzz/internal/logger"
 )
 
 func IsGoP() bool {
@@ -38,16 +35,11 @@ func InArray(in string, arr []string) bool {
 // GetFileModTime returns unix timestamp of `os.File.ModTime` for the given path.
 func GetFileModTime(path string) int64 {
 	path = strings.Replace(path, "\\", "/", -1)
-	f, err := os.Open(path)
-	if err != nil {
-		logger.Log.Errorf("Failed to open file on '%s': %s", path, err)
-		return time.Now().Unix()
-	}
-	defer f.Close()
 
-	fi, err := f.Stat()
+	// Use os.Stat directly instead of opening the file
+	fi, err := os.Stat(path)
 	if err != nil {
-		logger.Log.Errorf("Failed to get file stats: %s", err)
+		// return current time
 		return time.Now().Unix()
 	}
 
@@ -56,7 +48,7 @@ func GetFileModTime(path string) int64 {
 
 func GetPathDir(path string, contain []string) []string {
 	var dirs []string
-	files, err := ioutil.ReadDir(path)
+	files, err := os.ReadDir(path)
 	if err != nil {
 		return dirs
 	}
@@ -84,7 +76,7 @@ func GetPathDir(path string, contain []string) []string {
 func GetVailDir(paths []string, contain []string) []string {
 	var newDirs []string
 	for _, p := range paths {
-		files, _ := ioutil.ReadDir(p)
+		files, _ := os.ReadDir(p)
 		for _, f := range files {
 			fname := f.Name()
 			suffix := path.Ext(fname)
@@ -124,13 +116,11 @@ func IsExist(path string) bool {
 }
 
 func WriteFile(file string, content string) error {
-	return ioutil.WriteFile(file, []byte(content), os.ModePerm)
+	return os.WriteFile(file, []byte(content), os.ModePerm)
 }
 
 func ReadFile(file string) (string, error) {
-	f, err := os.OpenFile(file, os.O_RDONLY, os.ModePerm)
-	defer f.Close()
-	b, err := ioutil.ReadAll(f)
+	b, err := os.ReadFile(file)
 	return string(b), err
 }
 
