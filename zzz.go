@@ -24,11 +24,12 @@ func main() {
 	app := cli.NewApp()
 	app.Name = AppName
 	app.Version = Version
-	app.Usage = "A simple go realtime develop tool"
+	app.Usage = "A high-performance Go/Rust realtime development tool"
 	app.Commands = []cli.Command{
 		cmd.Run,
 		cmd.New,
 		cmd.Version,
+		cmd.Status,
 	}
 
 	if err := app.Run(os.Args); err != nil {
