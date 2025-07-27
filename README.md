@@ -18,6 +18,7 @@
 
 ```bash
 go install github.com/midoks/zzz@latest
+go install github.com/midoks/zzz@v0.0.7
 ```
 
 ### 命令功能
