@@ -17,3 +17,4 @@ zzz
 vendor
 *.DS_Store
 dist
+/test_rust_project/target
