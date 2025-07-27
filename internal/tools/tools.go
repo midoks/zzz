@@ -19,44 +19,13 @@ func IsRustP() bool {
 	return IsExist("Cargo.toml")
 }
 
-// Cache for frequently used arrays to improve lookup performance
-var (
-	arrayCache      = make(map[string]map[string]bool)
-	arrayCacheMutex sync.RWMutex
-)
-
-// InArray checks if a string exists in an array with optimized lookup
 func InArray(in string, arr []string) bool {
-	// For small arrays, direct iteration is faster
-	if len(arr) <= 5 {
-		for _, a := range arr {
-			if strings.EqualFold(in, a) {
-				return true
-			}
+	for _, a := range arr {
+		if strings.EqualFold(in, a) {
+			return true
 		}
-		return false
 	}
-
-	// For larger arrays, use cached map for better performance
-	cacheKey := strings.Join(arr, "|")
-	arrayCacheMutex.RLock()
-	lookupMap, exists := arrayCache[cacheKey]
-	arrayCacheMutex.RUnlock()
-
-	if !exists {
-		// Create lookup map
-		lookupMap = make(map[string]bool, len(arr))
-		for _, a := range arr {
-			lookupMap[strings.ToLower(a)] = true
-		}
-
-		// Cache it
-		arrayCacheMutex.Lock()
-		arrayCache[cacheKey] = lookupMap
-		arrayCacheMutex.Unlock()
-	}
-
-	return lookupMap[strings.ToLower(in)]
+	return false
 }
 
 // File info cache for better performance
