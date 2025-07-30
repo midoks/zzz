@@ -138,12 +138,6 @@ func handleForceGC() error {
 func handleClearCache() error {
 	logger.Log.Info("Clearing all caches...")
 
-	// Clear build cache
-	if buildCache != nil {
-		buildCache.ClearCache()
-		logger.Log.Info("Build cache cleared")
-	}
-
 	// Clear file cache
 	cacheMutex.Lock()
 	fileCache = make(map[string]fileCacheEntry)
@@ -196,13 +190,6 @@ func showOptimizationStatus(detailed, jsonOutput bool) error {
 		logger.Log.Warn("Performance optimizer not available")
 	}
 
-	// Cache status
-	if buildCache != nil {
-		cacheStats := buildCache.GetCacheStats()
-		logger.Log.Infof("Build Cache Languages: %v", cacheStats["cached_languages"])
-		logger.Log.Infof("Cache Directory: %v", cacheStats["cache_directory"])
-	}
-
 	if detailed {
 		showDetailedStats()
 	}
@@ -221,11 +208,6 @@ func showOptimizationStatusJSON(detailed bool) error {
 		status["optimizer"] = perfOptimizer.GetStats()
 	} else {
 		status["optimizer"] = map[string]interface{}{"available": false}
-	}
-
-	// Cache stats
-	if buildCache != nil {
-		status["build_cache"] = buildCache.GetCacheStats()
 	}
 
 	if detailed {
