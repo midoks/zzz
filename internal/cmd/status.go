@@ -30,12 +30,6 @@ func CmdStatus(c *cli.Context) error {
 	runMutex.RUnlock()
 	logger.Log.Infof("Currently Building: %v", isCurrentlyBuilding)
 
-	if buildCache != nil {
-		logger.Log.Info("\n=== Build Cache ===")
-		cacheStats := buildCache.GetCacheStats()
-		logger.Log.Infof("Cached Languages: %v", cacheStats["cached_languages"])
-	}
-
 	if perfOptimizer != nil {
 		logger.Log.Info("\n=== Performance Optimizer ===")
 		stats := perfOptimizer.GetStats()
