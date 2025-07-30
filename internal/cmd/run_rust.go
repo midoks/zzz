@@ -27,14 +27,6 @@ func CmdAutoBuildRust(rootPath string) {
 		runMutex.Unlock()
 	}()
 
-	// Check if rebuild is necessary using smart cache
-	// For Rust projects, we need to check .rs files specifically
-	rustExt := []string{"rs"}
-	if !buildCache.ShouldRebuild(rootPath, "rust", rustExt) {
-		logger.Log.Info("No changes detected, skipping build")
-		return
-	}
-
 	// Start performance monitoring
 	stats := monitor.StartBuild()
 	defer stats.EndBuild()
@@ -68,9 +60,6 @@ func CmdAutoBuildRust(rootPath string) {
 		logger.Log.Info("This might be due to a mismatch between project name and binary name")
 		return
 	}
-
-	// Mark build as complete in cache
-	buildCache.MarkBuildComplete("rust")
 
 	logger.Log.Success("Rust build completed successfully")
 
