@@ -28,23 +28,7 @@ import (
 	"github.com/midoks/zzz/internal/tools"
 )
 
-// killProcessGroup kills a process group (Unix-like systems only)
-func killProcessGroup(pid int) error {
-	if runtime.GOOS == "windows" {
-		return nil // Not supported on Windows
-	}
-	return syscall.Kill(-pid, syscall.SIGKILL)
-}
 
-// setProcAttributes sets process attributes for better process management
-func setProcAttributes() *syscall.SysProcAttr {
-	if runtime.GOOS == "windows" {
-		return nil // Windows doesn't support process groups the same way
-	}
-	return &syscall.SysProcAttr{
-		Setpgid: true, // Create new process group
-	}
-}
 
 var Run = cli.Command{
 	Name:        "run",
