@@ -28,8 +28,6 @@ import (
 	"github.com/midoks/zzz/internal/tools"
 )
 
-
-
 var Run = cli.Command{
 	Name:        "run",
 	Usage:       "Run the application",
