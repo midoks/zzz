@@ -28,6 +28,24 @@ import (
 	"github.com/midoks/zzz/internal/tools"
 )
 
+// killProcessGroup kills a process group (Unix-like systems only)
+func killProcessGroup(pid int) error {
+	if runtime.GOOS == "windows" {
+		return nil // Not supported on Windows
+	}
+	return syscall.Kill(-pid, syscall.SIGKILL)
+}
+
+// setProcAttributes sets process attributes for better process management
+func setProcAttributes() *syscall.SysProcAttr {
+	if runtime.GOOS == "windows" {
+		return nil // Windows doesn't support process groups the same way
+	}
+	return &syscall.SysProcAttr{
+		Setpgid: true, // Create new process group
+	}
+}
+
 var Run = cli.Command{
 	Name:        "run",
 	Usage:       "Run the application",
@@ -318,7 +336,10 @@ func Kill() {
 			// Try to kill process group as last resort
 			if runtime.GOOS != "windows" {
 				logger.Log.Warn("Attempting to kill process group...")
-				syscall.Kill(-pid, syscall.SIGKILL)
+				// Kill process group (Unix-like systems only)
+				if err := killProcessGroup(pid); err != nil {
+					logger.Log.Errorf("Failed to kill process group: %s", err)
+				}
 			}
 		}
 	}
@@ -599,11 +620,7 @@ func CmdStart(rootPath string) {
 	cmd.Stderr = os.Stderr
 
 	// Set process group for better process management (Unix-like systems)
-	if runtime.GOOS != "windows" {
-		cmd.SysProcAttr = &syscall.SysProcAttr{
-			Setpgid: true, // Create new process group
-		}
-	}
+	cmd.SysProcAttr = setProcAttributes()
 
 	// Start the process in a goroutine
 	go func() {
