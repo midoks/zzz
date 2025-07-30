@@ -1,10 +1,11 @@
 title: zzz
 dev: false
 frequency: 2
-lang: "go"
+lang: go
 dirfilter:
 - tmp
 - .git
+- .zzz-cache
 - scripts
 - vendor
 - logs
