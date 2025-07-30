@@ -20,7 +20,6 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/fsnotify/fsnotify"
-	"github.com/midoks/zzz/internal/cache"
 	"github.com/midoks/zzz/internal/hotreload"
 	"github.com/midoks/zzz/internal/logger"
 	"github.com/midoks/zzz/internal/logger/colors"
@@ -49,7 +48,6 @@ var (
 	isBuilding     = false
 	fileCache      = make(map[string]fileCacheEntry)
 	cacheMutex     sync.RWMutex
-	buildCache     *cache.BuildCache
 	perfOptimizer  *optimizer.Optimizer
 	configReloader *hotreload.ConfigReloader
 	// Performance optimization: reduce memory allocations
@@ -94,9 +92,6 @@ func init() {
 	} else {
 		setDefaultConfig()
 	}
-
-	// Initialize build cache
-	buildCache = cache.NewBuildCache(rootPath)
 
 	// Initialize performance optimizer
 	optConfig := optimizer.DefaultConfig()
@@ -226,7 +221,7 @@ func reloadConfig() {
 		return
 	}
 
-	logger.Log.Info("Configuration file changed, reloading...")
+	// logger.Log.Info("Configuration file changed, reloading...")
 
 	content, err := tools.ReadFile(file)
 	if err != nil {
@@ -247,15 +242,14 @@ func reloadConfig() {
 	validateConfig()
 	runMutex.Unlock()
 
-	logger.Log.Success("Configuration reloaded successfully")
-
+	// logger.Log.Success("Configuration reloaded successfully")
 	// Log significant changes
 	if oldFreq != conf.Frequency {
 		logger.Log.Infof("Frequency changed from %d to %d seconds", oldFreq, conf.Frequency)
 	}
 }
 
-// Kill kills the running command process with improved error handling
+// Kill kills the running command process with enhanced handling for server processes
 func Kill() {
 	runMutex.Lock()
 	defer runMutex.Unlock()
@@ -273,18 +267,21 @@ func Kill() {
 	pid := cmd.Process.Pid
 	logger.Log.Infof("Terminating process (PID: %d)...", pid)
 
-	// Try graceful shutdown first
-	var sig os.Signal = os.Interrupt
+	// For server processes, try SIGTERM first (more graceful for HTTP servers)
+	var sig os.Signal = syscall.SIGTERM
 	if runtime.GOOS == "windows" {
-		sig = os.Kill // Windows doesn't support SIGINT properly
+		sig = os.Kill // Windows doesn't support SIGTERM properly
 	}
 
 	if err := cmd.Process.Signal(sig); err != nil {
-		logger.Log.Warnf("Failed to send signal to process: %s", err)
-		return
+		logger.Log.Warnf("Failed to send SIGTERM to process: %s", err)
+		// If SIGTERM fails, try SIGINT
+		if err := cmd.Process.Signal(os.Interrupt); err != nil {
+			logger.Log.Warnf("Failed to send SIGINT to process: %s", err)
+		}
 	}
 
-	// Wait for graceful shutdown with timeout
+	// Wait for graceful shutdown with shorter timeout for servers
 	done := make(chan error, 1)
 	go func() {
 		done <- cmd.Wait()
@@ -297,18 +294,32 @@ func Kill() {
 		} else {
 			logger.Log.Info("Process terminated gracefully")
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(3 * time.Second): // Shorter timeout for servers
 		logger.Log.Warn("Graceful shutdown timeout, force killing...")
-		if err := cmd.Process.Kill(); err != nil {
-			logger.Log.Errorf("Failed to force kill process: %s", err)
+
+		// Try SIGKILL for force termination
+		if err := cmd.Process.Signal(syscall.SIGKILL); err != nil {
+			// If SIGKILL fails, use Process.Kill()
+			if err := cmd.Process.Kill(); err != nil {
+				logger.Log.Errorf("Failed to force kill process: %s", err)
+			} else {
+				logger.Log.Info("Process force killed with Kill()")
+			}
 		} else {
-			logger.Log.Info("Process force killed")
+			logger.Log.Info("Process force killed with SIGKILL")
 		}
+
 		// Wait a bit more for the force kill to complete
 		select {
 		case <-done:
+			logger.Log.Info("Process cleanup completed")
 		case <-time.After(2 * time.Second):
 			logger.Log.Error("Process may still be running after force kill")
+			// Try to kill process group as last resort
+			if runtime.GOOS != "windows" {
+				logger.Log.Warn("Attempting to kill process group...")
+				syscall.Kill(-pid, syscall.SIGKILL)
+			}
 		}
 	}
 
@@ -392,7 +403,6 @@ func executeHooks(hookType string, scripts []string, rootPath string) {
 		}
 
 		logger.Log.Infof("Running %s hook %d/%d", hookType, i+1, len(scripts))
-
 		if err := executeScript(script, rootPath); err != nil {
 			logger.Log.Errorf("%s hook %d failed: %s", hookType, i+1, err)
 			// Continue with other hooks even if one fails
@@ -405,26 +415,31 @@ func executeHooks(hookType string, scripts []string, rootPath string) {
 	logger.Log.Infof("%s hooks completed in %v", hookType, duration)
 }
 
-// executeScript executes a single script with improved error handling
+// executeScript executes a single script by writing to temporary file
 func executeScript(script, rootPath string) error {
-	// Use direct command execution for simple commands
-	if !strings.Contains(script, ";") && !strings.Contains(script, "&&") && !strings.Contains(script, "||") {
-		args := strings.Fields(script)
-		if len(args) > 0 {
-			cmd := exec.Command(args[0], args[1:]...)
-			cmd.Dir = rootPath
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			return cmd.Run()
-		}
+	// Create temporary file for script execution
+	fileSuffix := GetBashFileSuffix()
+	tmpFile := rootPath + "/." + tools.Md5(script) + "." + fileSuffix
+
+	// Write script content to temporary file
+	werr := tools.WriteFile(tmpFile, script)
+	if werr != nil {
+		return fmt.Errorf("write script to temporary file error: %s", werr)
 	}
 
-	// For complex scripts, use shell execution
+	// Ensure temporary file is cleaned up
+	defer func() {
+		if tools.IsExist(tmpFile) {
+			os.Remove(tmpFile)
+		}
+	}()
+
+	// Execute the temporary file
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
-		cmd = exec.Command("cmd", "/C", script)
+		cmd = exec.Command("cmd", "/C", tmpFile)
 	} else {
-		cmd = exec.Command("sh", "-c", script)
+		cmd = exec.Command("sh", "-c", tmpFile)
 	}
 
 	cmd.Dir = rootPath
@@ -504,12 +519,6 @@ func CmdAutoBuild(rootPath string) {
 		return
 	}
 
-	// Check if rebuild is necessary using smart cache
-	if !buildCache.ShouldRebuild(rootPath, "go", conf.Ext) {
-		logger.Log.Info("No changes detected, skipping build")
-		return
-	}
-
 	// Start performance monitoring
 	stats := monitor.StartBuild()
 	defer stats.EndBuild()
@@ -547,9 +556,6 @@ func CmdAutoBuild(rootPath string) {
 		logger.Log.Errorf("Build failed: %s", stderr.String())
 		return
 	}
-
-	// Mark build as complete in cache
-	buildCache.MarkBuildComplete("go")
 
 	logger.Log.Success("Go build completed successfully")
 
@@ -591,6 +597,13 @@ func CmdStart(rootPath string) {
 	cmd = exec.Command(appName)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+
+	// Set process group for better process management (Unix-like systems)
+	if runtime.GOOS != "windows" {
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			Setpgid: true, // Create new process group
+		}
+	}
 
 	// Start the process in a goroutine
 	go func() {
